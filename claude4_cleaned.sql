@@ -1924,8 +1924,126 @@ EXECUTE FUNCTION public.sync_auth_user_to_public_user();
 -- );
 
 
+---------- insert into brand_products_services ----------
+-- -- Flipkart
+-- INSERT INTO brand_products_services (bps_b_id, bps_name, bps_description, bps_category, bps_price_range, bps_t_id)
+-- VALUES
+-- (1, 'Flipkart Plus Membership', 'Loyalty program offering free delivery and early access to sales.', 'Membership', '₹0–₹999', 1),
+-- (1, 'Flipkart Health+', 'Online pharmacy service providing medicines and healthcare 0products.', 'Healthcare', '₹50–₹5,000', 1);
+
+-- -- Amazon India
+-- INSERT INTO brand_products_services (bps_b_id, bps_name, bps_description, bps_category, bps_price_range, bps_t_id)
+-- VALUES
+-- (2, 'Amazon Prime', 'Subscription offering fast delivery, Prime Video, and more.', 'Subscription', '₹179/month', 2),
+-- (2, 'Amazon Pay', 'Digital wallet for seamless transactions on and off Amazon.', 'Fintech', 'Varies', 2);
+
+-- -- Meesho
+-- INSERT INTO brand_products_services (bps_b_id, bps_name, bps_description, bps_category, bps_price_range, bps_t_id)
+-- VALUES
+-- (3, 'Reseller Platform', 'Enables individuals to resell products via social media.', 'E-commerce', '₹100–₹5,000', 3),
+-- (3, 'Meesho Supplier Hub', 'Platform for suppliers to list products for resellers.', 'Marketplace', 'Varies', 3);
+
+-- -- Puma India
+-- INSERT INTO brand_products_services (bps_b_id, bps_name, bps_description, bps_category, bps_price_range, bps_t_id)
+-- VALUES
+-- (4, 'Running Shoes', 'High-performance footwear for athletes.', 'Footwear', '₹2,000–₹10,000', 4),
+-- (4, 'Athleisure Apparel', 'Stylish and comfortable sportswear.', 'Apparel', '₹1,000–₹8,000', 4);
+
+-- -- Dream11
+-- INSERT INTO brand_products_services (bps_b_id, bps_name, bps_description, bps_category, bps_price_range, bps_t_id)
+-- VALUES
+-- (5, 'Fantasy Cricket', 'Platform to create virtual cricket teams and win prizes.', 'Gaming', '₹0–₹1,000', 5),
+-- (5, 'Fantasy Football', 'Engage in virtual football leagues.', 'Gaming', '₹0–₹1,000', 5);
+
+-- -- Google
+-- INSERT INTO brand_products_services (bps_b_id, bps_name, bps_description, bps_category, bps_price_range, bps_t_id)
+-- VALUES
+-- (6, 'Google Search', 'Search engine providing information on the web.', 'Technology', 'Free', 6),
+-- (6, 'Google Ads', 'Online advertising platform for businesses.', 'Advertising', 'Varies', 6);
+
+-- -- Myntra
+-- INSERT INTO brand_products_services (bps_b_id, bps_name, bps_description, bps_category, bps_price_range, bps_t_id)
+-- VALUES
+-- (7, 'Fashion E-commerce', 'Online platform for clothing and accessories.', 'Retail', '₹500–₹10,000', 7),
+-- (7, 'Myntra Insider', 'Loyalty program offering exclusive benefits.', 'Membership', 'Free–₹999', 7);
+
+-- -- Netflix
+-- INSERT INTO brand_products_services (bps_b_id, bps_name, bps_description, bps_category, bps_price_range, bps_t_id)
+-- VALUES
+-- (8, 'Streaming Service', 'Subscription-based platform for movies and TV shows.', 'Entertainment', '₹199–₹799/month', 8),
+-- (8, 'Netflix Originals', 'Exclusive content produced by Netflix.', 'Entertainment', 'Included in subscription', 8);
+
+-- -- Sugar
+-- INSERT INTO brand_products_services (bps_b_id, bps_name, bps_description, bps_category, bps_price_range, bps_t_id)
+-- VALUES
+-- (9, 'Matte Lipsticks', 'Long-lasting lipsticks in various shades.', 'Cosmetics', '₹499–₹799', 9),
+-- (9, 'Face Makeup', 'Range of foundations and concealers.', 'Cosmetics', '₹599–₹1,199', 9);
+
+-- -- Apple
+-- INSERT INTO brand_products_services (bps_b_id, bps_name, bps_description, bps_category, bps_price_range, bps_t_id)
+-- VALUES
+-- (10, 'iPhone 16 Pro', 'Latest smartphone with advanced features.', 'Electronics', '₹61,855', 10),
+-- (10, 'MacBook Air M3', 'Lightweight laptop with M3 chip.', 'Computers', '₹92,000–₹1,20,000', 10);
+
+-- -- Samsung
+-- INSERT INTO brand_products_services (bps_b_id, bps_name, bps_description, bps_category, bps_price_range, bps_t_id)
+-- VALUES
+-- (11, 'Galaxy S25', 'Flagship smartphone with cutting-edge technology.', 'Electronics', '₹70,000–₹1,10,000', 11),
+-- (11, 'QLED TVs', 'High-definition televisions with QLED display.', 'Home Appliances', '₹50,000–₹2,00,000', 11);
+
+-- -- Mamaearth
+-- INSERT INTO brand_products_services (bps_b_id, bps_name, bps_description, bps_category, bps_price_range, bps_t_id)
+-- VALUES
+-- (12, 'Natural Skincare', 'Products made with natural ingredients.', 'Personal Care', '₹299–₹999', 12),
+-- (12, 'Baby Care Range', 'Safe products for babies and toddlers.', 'Personal Care', '₹199–₹799', 12);
+
+-- -- Allen Solly
+-- INSERT INTO brand_products_services (bps_b_id, bps_name, bps_description, bps_category, bps_price_range, bps_t_id)
+-- VALUES
+-- (13, 'Formal Wear', 'Business attire for men and women.', 'Apparel', '₹1,000–₹5,000', 13),
+-- (13, 'Casual Clothing', 'Everyday wear with a stylish touch.', 'Apparel', '₹800–₹3,000', 13);
+
+-- -- Intel
+-- INSERT INTO brand_products_services (bps_b_id, bps_name, bps_description, bps_category, bps_price_range, bps_t_id)
+-- VALUES
+-- (14, 'Intel Core i9', 'High-performance processors for computing.', 'Technology', '₹30,000–₹60,000', 14),
+-- (14, 'Intel Arc GPUs', 'Graphics processing units for gaming and design.', 'Technology', '₹20,000–₹50,000', 14);
+
+-- -- Realme
+-- INSERT INTO brand_products_services (bps_b_id, bps_name, bps_description, bps_category, bps_price_range, bps_t_id)
+-- VALUES
+-- (15, 'Realme GT Series', 'Smartphones with powerful performance.', 'Electronics', '₹25,000–₹40,000', 15),
+-- (15, 'Realme Buds Air', 'Wireless earbuds with noise cancellation.', 'Accessories', '₹3,000–₹5,000', 15);
+
+-- ---------- insert into brand_competitors table ----------
+-- -- Amazon India Competitors
+-- INSERT INTO brand_competitors (bc_b_id, bc_competitor_name, bc_type, bc_market_share, bc_strengths, bc_weaknesses, bc_website, bc_t_id)
+-- VALUES
+-- (2, 'Flipkart', 'direct', '45%', 'Strong presence in Indian market.', 'Limited global reach.', 'https://www.flipkart.com', 1),
+-- (2, 'Reliance Digital', 'indirect', '10%', 'Wide offline network.', 'Less online presence.', 'https://www.reliancedigital.in', 1);
+
+-- -- Meesho Competitors
+-- INSERT INTO brand_competitors (bc_b_id, bc_competitor_name, bc_type, bc_market_share, bc_strengths, bc_weaknesses, bc_website, bc_t_id)
+-- VALUES
+-- (3, 'GlowRoad', 'direct', '15%', 'Strong reseller network.', 'Limited product categories.', 'https://www.glowroad.com', 1),
+-- (3, 'Shop101', 'indirect', '10%', 'User-friendly platform.', 'Smaller supplier base.', 'https://www.shop101.com', 1);
+
+-- -- Puma India Competitors
+-- INSERT INTO brand_competitors (bc_b_id, bc_competitor_name, bc_type, bc_market_share, bc_strengths, bc_weaknesses, bc_website, bc_t_id)
+-- VALUES
+-- (4, 'Nike India', 'direct', '30%', 'Innovative designs.', 'Premium pricing.', 'https://www.nike.com/in', 1),
+-- (4, 'Adidas India', 'direct', '25%', 'Strong brand loyalty.', 'Limited customization.', 'https://www.adidas.co.in', 1);
+
+-- -- Dream11 Competitors
+-- INSERT INTO brand_competitors (bc_b_id, bc_competitor_name, bc_type, bc_market_share, bc_strengths, bc_weaknesses, bc_website, bc_t_id)
+-- VALUES
+-- (5, 'My11Circle', 'direct', '20%', 'Celebrity endorsements.', 'Smaller user base.', 'https://www.my11circle.com', 1),
+-- (5, 'FanFight', 'indirect', '10%', 'Easy-to-use interface.', 'Fewer contests.', 'https://www.fanfight.com', 1);
+
+
 
 -- ---------- insert into campaign ----------
+
 
 -- =================================================================================================================
 -- ************************************************ SELECT QUERIES *************************************************
