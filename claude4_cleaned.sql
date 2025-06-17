@@ -873,9 +873,6 @@ CREATE TABLE campaigns (
   c_previously_worked_with_brand BOOLEAN DEFAULT false,
 
    -- Point of Contact Information
-  c_poc_cs_user_id INTEGER,
-  c_poc_irm_user_id INTEGER,
-  c_poc_ex_user_id INTEGER,
   c_poc_brand_name VARCHAR(255),
   c_poc_brand_designation VARCHAR(100),
   c_poc_brand_email VARCHAR(255),
@@ -894,9 +891,6 @@ CREATE TABLE campaigns (
 
   -- Foreign key constraints
   CONSTRAINT fk_campaigns_brand FOREIGN KEY (c_b_id) REFERENCES brands(b_id) ON DELETE RESTRICT,
-  CONSTRAINT fk_campaigns_poc_cs FOREIGN KEY (c_poc_cs_user_id) REFERENCES users(u_id) ON DELETE RESTRICT,
-  CONSTRAINT fk_campaigns_poc_bd FOREIGN KEY (c_poc_irm_user_id) REFERENCES users(u_id) ON DELETE RESTRICT,
-  CONSTRAINT fk_campaigns_poc_ex FOREIGN KEY (c_poc_ex_user_id) REFERENCES users(u_id) ON DELETE RESTRICT,
   CONSTRAINT fk_campaigns_tenant FOREIGN KEY (c_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,
 
   -- constraints
@@ -904,6 +898,27 @@ CREATE TABLE campaigns (
   CONSTRAINT chk_campaign_dates CHECK (c_end_date >= c_start_date),
   CONSTRAINT chk_target_age_range CHECK (c_target_age_from <= c_target_age_to),
   CONSTRAINT chk_inf_age_range CHECK (c_inf_age_from   <= c_inf_age_to)
+);
+
+---------- table campaign_poc ----------
+CREATE TABLE campaign_poc (
+  cp_id BIGSERIAL PRIMARY KEY,
+  cp_c_id INTEGER NOT NULL,    -- foreign key to 'c_id' from campaigns table
+  cp_u_id INTEGER NOT NULL,    -- foreign key to 'u_id' from users table
+  cp_t_id INTEGER NOT NULL,    -- foreign key to 't_id' from tenants table
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- Foreign key constraints
+  CONSTRAINT fk_campaign_poc_cp_u_id FOREIGN KEY (cp_u_id) REFERENCES users(u_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_campaign_poc_cp_c_id FOREIGN KEY (cp_c_id) REFERENCES campaigns(c_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_campaign_poc_cp_t_id FOREIGN KEY (cp_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT
 );
 
 ---------- table campaign_objectives ----------
@@ -940,7 +955,7 @@ CREATE TABLE campaign_lists (
   -- audit and logs
   created_by VARCHAR(100) NOT NULL DEFAULT current_user,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
-  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,s
   modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
   -- soft delete
   is_deleted BOOLEAN NOT NULL DEFAULT false,
@@ -1101,8 +1116,21 @@ EXECUTE FUNCTION trg_auto_create_tenant_for_brand();
 ---------- trigger function ----------
 CREATE OR REPLACE FUNCTION public.sync_auth_user_to_public_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  first_name TEXT;
+  last_name TEXT;
 BEGIN
-  INSERT INTO public.users (
+  -- Extract first word
+  first_name := split_part(NEW.display_name, ' ', 1);
+  
+  -- Extract remainder as last_name if exists
+  IF position(' ' IN NEW.display_name) > 0 THEN
+    last_name := substring(NEW.display_name FROM position(' ' IN NEW.display_name) + 1);
+  ELSE
+    last_name := NULL;
+  END IF;
+
+  INSERT INTO public.users_app (
     u_id_auth,
     u_first_name,
     u_last_name,
@@ -1112,8 +1140,8 @@ BEGIN
   )
   VALUES (
     NEW.id,
-    NEW.metadata->>'first_name',
-    NEW.metadata->>'last_name',
+    first_name,
+    last_name,
     CASE WHEN NEW.email_verified THEN NOW() ELSE NULL END,
     CASE WHEN NEW.phone_number_verified THEN NOW() ELSE NULL END,
     NEW.avatar_url
@@ -1325,6 +1353,7 @@ EXECUTE FUNCTION public.sync_auth_user_to_public_user();
 -- ('Product Team', 'Product Development Team', 'active', 1),
 -- ('BOD', 'Board of Directors', 'active', 1),
 -- ('Brand Strategy', 'Brand Strategy Team', 'active', 1);
+-- ('Account Management', 'Handles client account operations', 'active', 1);
 
 
 -- ---------- insert into roles ----------
@@ -2041,8 +2070,509 @@ EXECUTE FUNCTION public.sync_auth_user_to_public_user();
 -- (5, 'FanFight', 'indirect', '10%', 'Easy-to-use interface.', 'Fewer contests.', 'https://www.fanfight.com', 1);
 
 
+-- ---------- insert into users_app ----------
+-- ----- Insert into auth.users -----
+
+-- -- Account Management
+-- INSERT INTO auth.users (id, display_name, email, locale, avatar_url)
+-- VALUES
+--   (gen_random_uuid(), 'Sadiq Shaikh', 'sadiq.shaikh@famekeeda.com', 'en', 'https://drive.google.com/file/d/1Nsza3vV1wClMy2FXYu1igGrgqE3s2UPc/view?usp=drive_link'),
+--   (gen_random_uuid(), 'Melwyn John', 'melwyn@famekeeda.com', 'en', 'https://drive.google.com/file/d/12pnT9jQELaRRi9WncyPuEhQmBO2srOjS/view?usp=drive_link'),
+--   (gen_random_uuid(), 'Shraddha Gadkari', 'shraddha@famekeeda.com', 'en', 'https://drive.google.com/file/d/191Q4_qZlX4Yt-IfOy55KNfqzeOSx6qo9/view?usp=drive_link'),
+--   (gen_random_uuid(), 'Anushka Kadam', 'anushka.kadam@famekeeda.com', 'en', 'https://drive.google.com/file/d/1Nsza3vV1wClMy2FXYu1igGrgqE3s2UPc/view?usp=drive_link'),
+--   (gen_random_uuid(), 'Sonya Punjabi', 'sonya.punjabi@searchffiliate.com', 'en', 'https://drive.google.com/file/d/1KdYJ05P3TqMAyb3GaVmUidK1PmPZymAa/view?usp=drive_link'),
+--   (gen_random_uuid(), 'Shaibal Sutradhar', 'shaibal.sutradhar@famekeeda.com', 'en', 'https://drive.google.com/file/d/1lSdQgw_MhuXr62ohwsVqLOvHwYNI3ymT/view?usp=drive_link'),
+--   (gen_random_uuid(), 'Parmi Nanda', 'parmi.nanda@famekeeda.com', 'en', 'https://drive.google.com/file/d/1eUUCOW-utL323EDCZeOQ2EqE5Y3_M3Zv/view?usp=drive_link');
+
+-- -- Influencers Relations (tm_id = 1)
+-- INSERT INTO auth.users (id, display_name, email, locale, avatar_url)
+-- VALUES 
+--   (gen_random_uuid(), 'Rumana Khan', 'rumana@famekeeda.com', 'en', 'https://drive.google.com/file/d/1Cl11NINkOgMvBq0NWmc1G24r9PYvOleC/view?usp=drive_link'),
+--   (gen_random_uuid(), 'Shreesha Sharma', 'shreesha@famekeeda.com', 'en', 'https://drive.google.com/file/d/12pnT9jQELaRRi9WncyPuEhQmBO2srOjS/view?usp=drive_link'),
+--   (gen_random_uuid(), 'Ganesh Alakuntha', 'ganesh.a@famekeeda.com', 'en', 'https://drive.google.com/file/d/1YY5V9nvHWzk1ml5OCCxXbf7YgQRBQ_93/view?usp=drive_link'),
+--   (gen_random_uuid(), 'Prajakta Kadam', 'prajakta.kadam@famekeeda.com', 'en', 'https://drive.google.com/file/d/129Inr4s15R1mtAIkrAOrBO254dIXYYx5/view?usp=drive_link'),
+--   (gen_random_uuid(), 'Jaiee Mohare', 'jaiee.mohare@famekeeda.com', 'en', 'https://drive.google.com/file/d/1Y1Yxcpkj2kfWt4rsVp7Nyix162544h6k/view?usp=drive_link'),
+--   (gen_random_uuid(), 'Arshiya Chakraborty', 'arshiya.chakraborty@famekeeda.com', 'en', 'https://drive.google.com/file/d/1CgXDS_-dzzVKeQl8_NIyND2QryXPdj8p/view?usp=drive_link');
+
+-- -- Client Success (tm_id = 10)
+-- INSERT INTO auth.users (id, display_name, email, locale, avatar_url)
+-- VALUES 
+--   (gen_random_uuid(), 'Pratik Mhatre', 'pratik.mhatre@famekeeda.com', 'en', 'https://drive.google.com/file/d/1h0MOF7qugytXFOIGNir7U5JPFoJkrnzO/view?usp=drive_link');
+
+-- ----- update users_app -----
+-- -- Assign users 1-2 to R&D Subteam (tm_id = 16)
+-- UPDATE users_app SET u_tm_id = 16 WHERE u_id IN (1, 2);
+
+-- -- Assign users 3-7 to Account Management (tm_id = 21)
+-- UPDATE users_app SET u_tm_id = 21 WHERE u_id IN (3, 4, 5, 6, 7);
+
+-- -- Assign users 8-13 to Influencers Relations (tm_id = 1)
+-- UPDATE users_app SET u_tm_id = 1 WHERE u_id IN (8, 9, 10, 11, 12, 13);
+
+-- -- Assign user 14 to Client Success (tm_id = 10)
+-- UPDATE users_app SET u_tm_id = 10 WHERE u_id = 14;
+
 
 -- ---------- insert into campaign ----------
+-- Insert into campaigns table (updated schema)
+
+-- INSERT INTO campaigns (
+--   c_b_id, c_t_id, c_status, c_name, c_budget, c_budget_currency, c_p_id,
+--   c_start_date, c_end_date, c_products_services, c_business_objectives,
+--   c_target_age_from, c_target_age_to, c_target_gender, c_target_income,
+--   c_target_locations, c_target_education_levels, c_target_languages,
+--   c_target_interests, c_behavioral_patterns, c_psychographics,
+--   c_technographics, c_purchase_intent, c_additional_demographics,
+--   c_inf_followers_range, c_inf_engagement_rate, c_inf_genres, c_inf_niches,
+--   c_inf_locations, c_inf_age_from, c_inf_age_to, c_inf_languages,
+--   c_inf_primary_platform_id, c_inf_last_post_days, c_inf_payment_terms,
+--   c_worked_with_promoted_competitors, c_previously_worked_with_brand,
+--   c_poc_brand_name, c_poc_brand_designation, c_poc_brand_email, c_poc_brand_phone
+-- )
+-- VALUES (
+--   1, -- c_b_id (Flipkart)
+--   1, -- c_t_id (Fame Keeda)
+--   'active',
+--   'Flipkart Fashion Fiesta',
+--   1000000.00,
+--   'INR',
+--   NULL, -- c_p_id (Assuming no specific product IDs)
+--   '2025-08-01',
+--   '2025-08-31',
+--   'Apparel, Footwear, Accessories',
+--   'Increase fashion segment sales and brand visibility among young adults.',
+--   18,
+--   35,
+--   'all',
+--   '4-6LPA',
+--   '["Delhi", "Mumbai", "Bangalore", "Hyderabad"]',
+--   '["Bachelor''s Degree", "Master''s Degree"]',
+--   '["English", "Hindi"]',
+--   '["Fashion", "Lifestyle", "Shopping"]',
+--   'Frequent online shoppers with interest in latest fashion trends.',
+--   'Value-conscious, trend-aware, and socially active individuals.',
+--   'Active on mobile platforms, responsive to digital marketing.',
+--   'High intent to purchase during festive sales.',
+--   'Urban dwellers with access to online shopping platforms.',
+--   'Micro',
+--   '4-6%',
+--   '["Fashion", "Lifestyle"]',
+--   '["Streetwear", "Ethnic Wear"]',
+--   '["Delhi", "Mumbai", "Bangalore", "Hyderabad"]',
+--   18,
+--   35,
+--   '["English", "Hindi"]',
+--   '["Instagram", "YouTube"]',
+--   '30 days',
+--   'NET 30',
+--   false,
+--   false,
+--   'Anjali Sharma',
+--   'Marketing Manager',
+--   'anjali.sharma@flipkart.com',
+--   '+91-9876543210'
+-- );
+
+-- Insert into campaigns table
+-- INSERT INTO campaigns (
+--   c_b_id, c_t_id, c_status, c_name, c_budget, c_budget_currency, c_p_id,
+--   c_start_date, c_end_date, c_products_services, c_business_objectives,
+--   c_target_age_from, c_target_age_to, c_target_gender, c_target_income,
+--   c_target_locations, c_target_education_levels, c_target_languages,
+--   c_target_interests, c_behavioral_patterns, c_psychographics,
+--   c_technographics, c_purchase_intent, c_additional_demographics,
+--   c_inf_followers_range, c_inf_engagement_rate, c_inf_genres, c_inf_niches,
+--   c_inf_locations, c_inf_age_from, c_inf_age_to, c_inf_languages,
+--   c_inf_primary_platform_id, c_inf_last_post_days, c_inf_payment_terms,
+--   c_worked_with_promoted_competitors, c_previously_worked_with_brand,
+--   c_poc_brand_name, c_poc_brand_designation, c_poc_brand_email, c_poc_brand_phone
+-- )
+-- VALUES (
+--   1, -- c_b_id (Flipkart)
+--   1, -- c_t_id (Fame Keeda)
+--   'active',
+--   'Flipkart Big Billion Days 2025',
+--   5000000.00,
+--   'INR',
+--   NULL, -- c_p_id (Assuming no specific product IDs)
+--   '2025-10-01',
+--   '2025-10-10',
+--   'Electronics, Fashion, Home Appliances, Books, Furniture',
+--   'Boost sales across all categories during the festive season and increase market share.',
+--   18,
+--   45,
+--   'all',
+--   '6-10LPA',
+--   '["Delhi", "Mumbai", "Bangalore", "Chennai", "Kolkata"]',
+--   '["Bachelor''s Degree", "Master''s Degree"]',
+--   '["English", "Hindi"]',
+--   '["Online Shopping", "Festive Deals", "Electronics", "Fashion"]',
+--   'Price-sensitive shoppers looking for festive deals.',
+--   'Value-driven, tech-savvy, and deal-seeking individuals.',
+--   'Active on e-commerce platforms, responsive to digital marketing.',
+--   'High intent to purchase during festive sales.',
+--   'Urban and semi-urban dwellers with access to online shopping platforms.',
+--   'Macro',
+--   '6-10%',
+--   '["Technology", "Lifestyle", "Fashion"]',
+--   '["Smartphones", "Home Decor", "Apparel"]',
+--   '["Delhi", "Mumbai", "Bangalore", "Chennai", "Kolkata"]',
+--   18,
+--   45,
+--   '["English", "Hindi"]',
+--   '["Instagram", "YouTube", "Facebook"]',
+--   '30 days',
+--   'NET 30',
+--   false,
+--   true,
+--   'Ravi Kumar',
+--   'Senior Marketing Manager',
+--   'ravi.kumar@flipkart.com',
+--   '+91-9123456789'
+-- );
+
+-- -- Insert into campaigns table
+-- INSERT INTO campaigns (
+--   c_b_id, c_t_id, c_status, c_name, c_budget, c_budget_currency, c_p_id,
+--   c_start_date, c_end_date, c_products_services, c_business_objectives,
+--   c_target_age_from, c_target_age_to, c_target_gender, c_target_income,
+--   c_target_locations, c_target_education_levels, c_target_languages,
+--   c_target_interests, c_behavioral_patterns, c_psychographics,
+--   c_technographics, c_purchase_intent, c_additional_demographics,
+--   c_inf_followers_range, c_inf_engagement_rate, c_inf_genres, c_inf_niches,
+--   c_inf_locations, c_inf_age_from, c_inf_age_to, c_inf_languages,
+--   c_inf_primary_platform_id, c_inf_last_post_days, c_inf_payment_terms,
+--   c_worked_with_promoted_competitors, c_previously_worked_with_brand,
+--   c_poc_brand_name, c_poc_brand_designation, c_poc_brand_email, c_poc_brand_phone
+-- )
+-- VALUES (
+--   2, -- c_b_id (Amazon India)
+--   1, -- c_t_id (Fame Keeda)
+--   'active',
+--   'Aur Dikhao 2.0',
+--   1500000.00,
+--   'INR',
+--   NULL, -- c_p_id (Assuming no specific product IDs)
+--   '2025-09-01',
+--   '2025-09-30',
+--   'Electronics, Home Appliances, Fashion, Books',
+--   'Enhance product visibility and customer engagement across diverse categories in Tier II and III cities.',
+--   18,
+--   45,
+--   'all',
+--   '6-10LPA',
+--   '["Lucknow", "Jaipur", "Indore", "Patna"]',
+--   '["Bachelor''s Degree", "Master''s Degree"]',
+--   '["English", "Hindi"]',
+--   '["Online Shopping", "Technology", "Fashion"]',
+--   'Regular online shoppers seeking variety and value.',
+--   'Value-driven, tech-savvy, and aspirational individuals.',
+--   'Active on mobile platforms, responsive to personalized recommendations.',
+--   'High intent to purchase during promotional campaigns.',
+--   'Residents of emerging urban centers with growing e-commerce adoption.',
+--   'Micro',
+--   '4-6%',
+--   '["Technology", "Lifestyle"]',
+--   '["Gadgets", "Home Decor"]',
+--   '["Lucknow", "Jaipur", "Indore", "Patna"]',
+--   18,
+--   45,
+--   '["English", "Hindi"]',
+--   '["Instagram", "YouTube"]',
+--   '30 days',
+--   'NET 30',
+--   false,
+--   false,
+--   'Rahul Verma',
+--   'Senior Marketing Manager',
+--   'rahul.verma@amazon.in',
+--   '+91-9876543211'
+-- );
+
+-- INSERT INTO campaigns (
+--   c_b_id, c_t_id, c_status, c_name, c_budget, c_budget_currency, c_p_id,
+--   c_start_date, c_end_date, c_products_services, c_business_objectives,
+--   c_target_age_from, c_target_age_to, c_target_gender, c_target_income,
+--   c_target_locations, c_target_education_levels, c_target_languages,
+--   c_target_interests, c_behavioral_patterns, c_psychographics,
+--   c_technographics, c_purchase_intent, c_additional_demographics,
+--   c_inf_followers_range, c_inf_engagement_rate, c_inf_genres, c_inf_niches,
+--   c_inf_locations, c_inf_age_from, c_inf_age_to, c_inf_languages,
+--   c_inf_primary_platform_id, c_inf_last_post_days, c_inf_payment_terms,
+--   c_worked_with_promoted_competitors, c_previously_worked_with_brand,
+--   c_poc_brand_name, c_poc_brand_designation, c_poc_brand_email, c_poc_brand_phone
+-- )
+-- VALUES (
+--   2, -- c_b_id (Amazon India)
+--   2, -- c_t_id (Assumed tenant ID for Amazon India)
+--   'active',
+--   'Mission GraHAQ 3.0',
+--   5000000.00,
+--   'INR',
+--   NULL,
+--   '2024-12-01',
+--   '2025-02-28',
+--   'Consumer Awareness Programs',
+--   'Enhance consumer awareness and safety, focusing on Tier II and III cities',
+--   25,
+--   45,
+--   'all',
+--   '2-4LPA',
+--   '["Lucknow", "Jaipur", "Indore", "Patna", "Nagpur"]',
+--   '["Bachelor''s Degree", "High School"]',
+--   '["Hindi", "English"]',
+--   '["Consumer Rights", "Online Shopping", "Digital Literacy"]',
+--   'Consumers seeking information on safe online shopping practices',
+--   'Value-conscious, digitally curious individuals',
+--   'Active on social media platforms, responsive to educational content',
+--   'High intent to engage with consumer awareness initiatives',
+--   'Residents of Tier II and III cities with growing internet penetration',
+--   'Micro',
+--   '2-4%',
+--   '["Education", "Awareness"]',
+--   '["Consumer Advocacy", "Digital Literacy"]',
+--   '["Lucknow", "Jaipur", "Indore", "Patna", "Nagpur"]',
+--   25,
+--   45,
+--   '["Hindi", "English"]',
+--   '["YouTube", "Facebook"]',
+--   '30 days',
+--   'NET 30',
+--   false,
+--   false,
+--   'Ravi Desai',
+--   'Director, Mass and Brand Marketing',
+--   'ravi.desai@amazon.in',
+--   '+91-9876543210'
+-- );
+
+-- ---------- insert into campaign_objectives ----------
+-- Insert into campaign_objectives table
+-- INSERT INTO campaign_objectives (
+--   co_c_id, co_objective, co_kpi, co_t_id
+-- )
+-- VALUES
+--   (
+--     1, 'Enhance brand visibility among target demographics.', 'Achieve a 20% increase in social media engagement during the campaign period.', 1 
+--   ),
+--   (
+--     1, 'Boost sales in the fashion segment.', 'Increase fashion category sales by 15% compared to the previous month.', 1
+--   ),
+--   (
+--     1, 'Expand customer base in Tier II and III cities.', 'Acquire 10,000 new customers from targeted regions.', 1
+--   );
+
+-- Insert into campaign_objectives table
+-- INSERT INTO campaign_objectives (co_c_id, co_objective, co_kpi, co_t_id)
+-- VALUES
+--   (2, 'Increase overall sales during the Big Billion Days event.', 'Achieve a 30% increase in sales compared to the previous month.', 1),
+--   (2, 'Enhance brand visibility and customer engagement.', 'Increase website traffic by 50% and social media engagement by 40%.', 1),
+--   (2, 'Expand customer base in Tier 2 and Tier 3 cities.', 'Achieve a 20% increase in new customer registrations from targeted regions.', 1);
+
+-- Assuming the campaign ID for 'Aur Dikhao 2.0' is 2
+-- INSERT INTO campaign_objectives (
+--   co_c_id, co_objective, co_kpi, co_t_id
+-- )
+-- VALUES
+--   (2, 'Increase product visibility across key categories in Tier II and III cities.', 'Achieve a 20% increase in product page views from targeted regions.', 1),
+--   (2, 'Enhance customer engagement through personalized recommendations.', 'Improve click-through rates on recommended products by 15%.', 1),
+--   (2, 'Boost sales during the campaign period.', 'Achieve a 25% increase in sales compared to the previous month.', 1);
+
+-- Insert into campaign_objectives table
+-- INSERT INTO campaign_objectives (co_c_id, co_objective, co_kpi, co_t_id)
+-- VALUES
+--   (3, 'Educate consumers about their rights and responsibilities in e-commerce', 'Reach 50 million consumers across Tier II and III cities', 2),
+--   (3, 'Promote safe online shopping practices', 'Conduct 1000+ awareness sessions and workshops', 2),
+--   (3, 'Enhance trust in digital transactions', 'Achieve 80% positive feedback from participants', 2);
+
+-- INSERT INTO campaign_objectives (co_c_id, co_objective, co_kpi, co_t_id)
+-- VALUES
+--   (4, 'Establish Puma as a leading brand in Indian badminton.', 'Achieve 20% market share in badminton segment by Q4 2025.', 1),
+--   (4, 'Increase engagement with Gen Z athletes.', 'Reach 1 million impressions among target demographic.', 1),
+--   (4, 'Boost sales of badminton products.', 'Increase sales by 30% during campaign period.', 1);
+
+-- ---------- insert into campaign_poc ----------
+-- INSERT INTO campaign_poc (cp_c_id, cp_u_id, cp_t_id)
+-- VALUES 
+--   (1, 3, 1),  -- Shraddha Gadkari
+--   (1, 9, 1),  -- Shreesha Sharma
+--   (1, 14, 1); -- Pratik Mhatre
+
+-- INSERT INTO campaign_poc (cp_c_id, cp_u_id, cp_t_id)
+-- VALUES 
+--   (1, 3, 1),  -- Shraddha Gadkari
+--   (1, 9, 1),  -- Shreesha Sharma
+--   (1, 14, 1); -- Pratik Mhatre
+
+-- -- Assign POCs to the new campaign
+-- INSERT INTO campaign_poc (cp_c_id, cp_u_id, cp_t_id)
+-- VALUES 
+--   (2, 3, 1),  -- Shraddha Gadkari
+--   (2, 9, 1),  -- Shreesha Sharma
+--   (2, 14, 1); -- Pratik Mhatre
+
+-- Assigning POCs to the campaign
+-- INSERT INTO campaign_poc (
+--   cp_c_id, cp_u_id, cp_t_id
+-- )
+-- VALUES
+--   (2, 3, 1),  -- Shraddha Gadkari
+--   (2, 9, 1),  -- Shreesha Sharma
+--   (2, 14, 1); -- Pratik Mhatre
+
+-- -- Insert into campaign_poc table
+-- INSERT INTO campaign_poc (cp_c_id, cp_u_id, cp_t_id)
+-- VALUES
+--   (3, 3, 2),  -- Shraddha Gadkari
+--   (3, 9, 2),  -- Shreesha Sharma
+--   (3, 14, 2); -- Pratik Mhatre
+
+-- INSERT INTO campaign_poc (cp_c_id, cp_u_id, cp_t_id)
+-- VALUES
+--   (4, 3, 1),  -- Shraddha Gadkari
+--   (4, 9, 1),  -- Shreesha Sharma
+--   (4, 14, 1); -- Pratik Mhatre
+
+
+-- ---------- insert into platforms ----------
+-- INSERT INTO platforms (p_name)
+-- VALUES 
+--   ('YouTube'),
+--   ('Instagram'),
+--   ('X (Twitter)'),
+--   ('LinkedIn'),
+--   ('Facebook'),
+--   ('Telegram');
+
+
+-- ---------- insert into deliverable_types ---------- 
+-- INSERT INTO deliverable_types (dt_name, dt_t_id)
+-- VALUES 
+--   ('Reels', 1),
+--   ('Collab Reels', 1),
+--   ('Static Posts', 1),
+--   ('Video Post', 1),
+--   ('Carousel Post', 1),
+--   ('Carousel Video', 1),
+--   ('Swipe Up Story', 1),
+--   ('Link Story', 1),
+--   ('Static Story', 1),
+--   ('Video Story', 1),
+--   ('Repost Story', 1),
+--   ('Live', 1),
+--   ('Conceptual Video', 1),
+--   ('Integrated Video', 1),
+--   ('Dedicated Video', 1),
+--   ('YouTube Shorts', 1),
+--   ('Community Post', 1),
+--   ('Pre-roll/Post-roll Ads', 1),
+--   ('Product Placement', 1),
+--   ('Polls', 1),
+--   ('Reshare', 1),
+--   ('Retweet', 1);
+
+
+-- ---------- insert into platform_deliverables ----------
+-- INSERT INTO platform_deliverables (pd_p_id, pd_dt_id, pd_t_id)
+-- VALUES
+--   (1, 13, 1), -- Conceptual Video
+--   (1, 14, 1), -- Integrated Video
+--   (1, 15, 1), -- Dedicated Video
+--   (1, 16, 1), -- YouTube Shorts
+--   (1, 17, 1), -- Community Post
+--   (1, 18, 1), -- Pre-roll/Post-roll Ads
+--   (1, 19, 1), -- Product Placement
+--   (1, 12, 1); -- Live
+
+-- INSERT INTO platform_deliverables (pd_p_id, pd_dt_id, pd_t_id)
+-- VALUES
+--   (2, 1, 1),  -- Reels
+--   (2, 2, 1),  -- Collab Reels
+--   (2, 3, 1),  -- Static Posts
+--   (2, 4, 1),  -- Video Post
+--   (2, 5, 1),  -- Carousel Post
+--   (2, 6, 1),  -- Carousel Video
+--   (2, 7, 1),  -- Swipe Up Story
+--   (2, 8, 1),  -- Link Story
+--   (2, 9, 1),  -- Static Story
+--   (2, 10, 1), -- Video Story
+--   (2, 11, 1), -- Repost Story
+--   (2, 12, 1); -- Live
+
+-- INSERT INTO platform_deliverables (pd_p_id, pd_dt_id, pd_t_id)
+-- VALUES
+--   (3, 3, 1),  -- Static Posts
+--   (3, 4, 1),  -- Video Post
+--   (3, 22, 1); -- Retweet
+
+-- INSERT INTO platform_deliverables (pd_p_id, pd_dt_id, pd_t_id)
+-- VALUES
+--   (4, 3, 1),  -- Static Posts
+--   (4, 4, 1),  -- Video Post
+--   (4, 21, 1), -- Reshare
+--   (4, 12, 1), -- Live
+--   (4, 20, 1); -- Polls
+
+-- INSERT INTO platform_deliverables (pd_p_id, pd_dt_id, pd_t_id)
+-- VALUES
+--   (5, 3, 1),  -- Static Posts
+--   (5, 4, 1),  -- Video Post
+--   (5, 5, 1),  -- Carousel Post
+--   (5, 6, 1),  -- Carousel Video
+--   (5, 7, 1),  -- Swipe Up Story
+--   (5, 8, 1),  -- Link Story
+--   (5, 9, 1),  -- Static Story
+--   (5, 10, 1), -- Video Story
+--   (5, 11, 1), -- Repost Story
+--   (5, 12, 1); -- Live
+
+-- INSERT INTO platform_deliverables (pd_p_id, pd_dt_id, pd_t_id)
+-- VALUES
+--   (6, 3, 1),  -- Static Posts
+--   (6, 4, 1),  -- Video Post
+--   (6, 11, 1), -- Repost Story
+--   (6, 20, 1); -- Polls
+
+
+-- ---------- insert into campaign_lists ----------
+-- INSERT INTO campaign_lists (cl_name, cl_c_id, cl_t_id)
+-- VALUES 
+--   ('Flipkart Fashion Fiesta - Nano Boosters', 1, 1),
+--   ('Flipkart Fashion Fiesta - Brand Legends', 1, 1),
+--   ('Flipkart Fashion Fiesta - Sales Warriors', 1, 1),
+--   ('Flipkart Fashion Fiesta - ROAS Max Pack', 1, 1),
+--   ('Flipkart Fashion Fiesta - Celeb Amplifiers', 1, 1),
+--   ('Flipkart Fashion Fiesta - High Turn Up Reserve', 1, 1);
+
+-- INSERT INTO campaign_lists (cl_name, cl_c_id, cl_t_id)
+-- VALUES 
+--   ('Aur Dikhao 2.0 - Viral Amplifiers', 3, 1),
+--   ('Aur Dikhao 2.0 - Regional Dominators', 3, 1),
+--   ('Aur Dikhao 2.0 - Conversion Kings', 3, 1),
+--   ('Aur Dikhao 2.0 - Brand Storytellers', 3, 1);
+
+-- INSERT INTO campaign_lists (cl_name, cl_c_id, cl_t_id)
+-- VALUES 
+--   ('Flipkart Big Billion Days 2025 - Mega Converters', 2, 1),
+--   ('Flipkart Big Billion Days 2025 - Tier II Warriors', 2, 1),
+--   ('Flipkart Big Billion Days 2025 - ROAS Max Squad', 2, 1);
+
+-- INSERT INTO campaign_lists (cl_name, cl_c_id, cl_t_id)
+-- VALUES 
+--   ('Mission GraHAQ 3.0 - Consumer Advocates', 4, 1),
+--   ('Mission GraHAQ 3.0 - Awareness Amplifiers', 4, 1),
+--   ('Mission GraHAQ 3.0 - Trust Builders', 4, 1),
+--   ('Mission GraHAQ 3.0 - Safety Champions', 4, 1);
+
+-- INSERT INTO campaign_lists (cl_name, cl_c_id, cl_t_id)
+-- VALUES 
+--   ('PVMA – Smash the Limits - Gen Z Athletes', 5, 1),
+--   ('PVMA – Smash the Limits - Power Performers', 5, 1),
+--   ('PVMA – Smash the Limits - Hyper Local Creators', 5, 1),
+--   ('PVMA – Smash the Limits - Endurance Stars', 5, 1),
+--   ('PVMA – Smash the Limits - National Icons', 5, 1);
+
+
 
 
 -- =================================================================================================================
