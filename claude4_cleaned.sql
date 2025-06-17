@@ -712,7 +712,7 @@ CREATE TABLE platform_deliverables (
 -- ********************************************** INFLUENCERS SECTION ***********************************************
 -- ------------------------------------------------------------------------------------------------------------------
 
----------- table influencers ---------- 
+---------- table influencers ----------
 CREATE TYPE influencer_status_enum AS ENUM ('active', 'inactive', 'blacklisted', 'pending_verification');
 CREATE TYPE verification_status_enum AS ENUM ('verified', 'unverified', 'pending');
 
