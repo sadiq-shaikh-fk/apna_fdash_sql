@@ -10,3 +10,67 @@
 10 - https://drive.google.com/file/d/1Y1Yxcpkj2kfWt4rsVp7Nyix162544h6k/view?usp=drive_link
 11 - https://drive.google.com/file/d/1CgXDS_-dzzVKeQl8_NIyND2QryXPdj8p/view?usp=drive_link
 12 - https://drive.google.com/file/d/1h0MOF7qugytXFOIGNir7U5JPFoJkrnzO/view?usp=drive_link
+
+
+
+CREATE TABLE deliverable_proposals (
+  dp_id BIGSERIAL PRIMARY KEY,
+  dp_influencer_proposal_id INTEGER NOT NULL,
+  dp_platform_deliverable_id INTEGER NOT NULL,
+  dp_agreed_price DECIMAL(15,2) NOT NULL,
+  dp_live_date DATE,
+  dp_notes TEXT,
+  dp_attachments JSONB,
+  dp_t_id INTEGER NOT NULL,
+  
+  -- PROPOSAL STATUS
+  dp_proposal_status proposal_status_enum NOT NULL DEFAULT 'draft',
+  
+  -- EXECUTION WORKFLOW (Only set after approval)
+  dp_stage dp_stage_enum,           -- NULL until approved
+  dp_status VARCHAR,                -- NULL until approved
+  
+  -- ADD THESE: Stage completion tracking for UI progress indicators
+  dp_onboarding_completed BOOLEAN NOT NULL DEFAULT false,
+  dp_script_completed BOOLEAN NOT NULL DEFAULT false,
+  dp_script_skipped BOOLEAN NOT NULL DEFAULT false,
+  dp_production_completed BOOLEAN NOT NULL DEFAULT false,
+  dp_production_skipped BOOLEAN NOT NULL DEFAULT false,
+  dp_ready_completed BOOLEAN NOT NULL DEFAULT false,
+  dp_live_completed BOOLEAN NOT NULL DEFAULT false,
+  dp_report_completed BOOLEAN NOT NULL DEFAULT false,
+  
+  -- ADD THESE: Workflow tracking timestamps
+  dp_onboarding_email_sent_at TIMESTAMP WITH TIME ZONE,
+  dp_onboarding_completed_at TIMESTAMP WITH TIME ZONE,
+  dp_tc_sent_at TIMESTAMP WITH TIME ZONE,
+  dp_script_requested_at TIMESTAMP WITH TIME ZONE,
+  dp_script_completed_at TIMESTAMP WITH TIME ZONE,
+  dp_script_skipped_at TIMESTAMP WITH TIME ZONE,
+  dp_assets_requested_at TIMESTAMP WITH TIME ZONE,
+  dp_production_completed_at TIMESTAMP WITH TIME ZONE,
+  dp_production_skipped_at TIMESTAMP WITH TIME ZONE,
+  dp_ready_completed_at TIMESTAMP WITH TIME ZONE,
+  dp_live_link_submitted_at TIMESTAMP WITH TIME ZONE,
+  dp_live_completed_at TIMESTAMP WITH TIME ZONE,
+  dp_insights_requested_at TIMESTAMP WITH TIME ZONE,
+  dp_report_completed_at TIMESTAMP WITH TIME ZONE,
+  
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  
+  -- Foreign key constraints
+  CONSTRAINT fk_deliverable_proposals_dp_ip_id FOREIGN KEY (dp_influencer_proposal_id) REFERENCES influencer_proposals(ip_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_deliverable_proposals_dp_pd_id FOREIGN KEY (dp_platform_deliverable_id) REFERENCES platform_deliverables(pd_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_deliverable_proposals_dp_t_id FOREIGN KEY (dp_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,
+  -- constraints
+  CONSTRAINT chk_price_positive CHECK (dp_agreed_price >= 0)
+);
+

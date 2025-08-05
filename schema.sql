@@ -712,7 +712,7 @@ CREATE TABLE platform_deliverables (
 -- ********************************************** INFLUENCERS SECTION ***********************************************
 -- ------------------------------------------------------------------------------------------------------------------
 
----------- table influencers ---------- 
+---------- table influencers ----------
 CREATE TYPE influencer_status_enum AS ENUM ('active', 'inactive', 'blacklisted', 'pending_verification');
 CREATE TYPE verification_status_enum AS ENUM ('verified', 'unverified', 'pending');
 
@@ -871,39 +871,49 @@ CREATE TABLE campaigns (
   c_inf_payment_terms VARCHAR(255),
   c_worked_with_promoted_competitors BOOLEAN DEFAULT false,
   c_previously_worked_with_brand BOOLEAN DEFAULT false,
-
-   -- Point of Contact Information
-  c_poc_cs_user_id INTEGER,
-  c_poc_irm_user_id INTEGER,
-  c_poc_ex_user_id INTEGER,
+  -- Point of Contact Information
   c_poc_brand_name VARCHAR(255),
   c_poc_brand_designation VARCHAR(100),
   c_poc_brand_email VARCHAR(255),
   c_poc_brand_phone VARCHAR(20),  
-
   -- audit and logs
   created_by VARCHAR(100) NOT NULL DEFAULT current_user,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
   modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
   modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
-
   -- soft delete
   is_deleted BOOLEAN NOT NULL DEFAULT false,
   deleted_at TIMESTAMP WITH TIME ZONE,
   deleted_by VARCHAR(100),
-
   -- Foreign key constraints
   CONSTRAINT fk_campaigns_brand FOREIGN KEY (c_b_id) REFERENCES brands(b_id) ON DELETE RESTRICT,
-  CONSTRAINT fk_campaigns_poc_cs FOREIGN KEY (c_poc_cs_user_id) REFERENCES users(u_id) ON DELETE RESTRICT,
-  CONSTRAINT fk_campaigns_poc_bd FOREIGN KEY (c_poc_irm_user_id) REFERENCES users(u_id) ON DELETE RESTRICT,
-  CONSTRAINT fk_campaigns_poc_ex FOREIGN KEY (c_poc_ex_user_id) REFERENCES users(u_id) ON DELETE RESTRICT,
   CONSTRAINT fk_campaigns_tenant FOREIGN KEY (c_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,
-
   -- constraints
   CONSTRAINT uk_campaigns_name_brand UNIQUE (c_name),
   CONSTRAINT chk_campaign_dates CHECK (c_end_date >= c_start_date),
   CONSTRAINT chk_target_age_range CHECK (c_target_age_from <= c_target_age_to),
   CONSTRAINT chk_inf_age_range CHECK (c_inf_age_from   <= c_inf_age_to)
+);
+
+---------- table campaign_poc ----------
+CREATE TABLE campaign_poc (
+  cp_id BIGSERIAL PRIMARY KEY,
+  cp_c_id INTEGER NOT NULL,    -- foreign key to 'c_id' from campaigns table
+  cp_u_id INTEGER NOT NULL,    -- foreign key to 'u_id' from users table
+  cp_t_id INTEGER NOT NULL,    -- foreign key to 't_id' from tenants table
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- Foreign key constraints
+  CONSTRAINT fk_campaign_poc_cp_u_id FOREIGN KEY (cp_u_id) REFERENCES users(u_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_campaign_poc_cp_c_id FOREIGN KEY (cp_c_id) REFERENCES campaigns(c_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_campaign_poc_cp_t_id FOREIGN KEY (cp_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT
 );
 
 ---------- table campaign_objectives ----------
@@ -931,7 +941,7 @@ CREATE TABLE campaign_objectives (
 -- ************************************ CAMPAIGN LISTS AND INFLUENCER SELECTION *************************************
 -- ------------------------------------------------------------------------------------------------------------------
 
----------- table campaign_lists ----------
+---------- table campaign_lists (FIXED SYNTAX ERROR) ----------
 CREATE TABLE campaign_lists (
   cl_id BIGSERIAL PRIMARY KEY,
   cl_name VARCHAR(500) NOT NULL,
@@ -940,7 +950,7 @@ CREATE TABLE campaign_lists (
   -- audit and logs
   created_by VARCHAR(100) NOT NULL DEFAULT current_user,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
-  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,  -- FIXED: Removed extra 's'
   modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
   -- soft delete
   is_deleted BOOLEAN NOT NULL DEFAULT false,
@@ -974,16 +984,102 @@ CREATE TABLE influencer_proposals (
   CONSTRAINT unique_inf_per_list UNIQUE (ip_cl_id, ip_inf_id)
 );
 
----------- table proposal_deliverables ----------
-CREATE TABLE proposal_deliverables (
-  prd_id BIGSERIAL PRIMARY KEY,
-  prd_ip_id INTEGER NOT NULL,    -- foreign key to 'ip_id' from influencer_proposals table
-  prd_pd_id INTEGER NOT NULL,    -- foreign key to 'pd_id' from platform_deliverables table -- addition of custom deliverables will go to platform_deliverables and its id would insert here
-  prd_agreed_price DECIMAL(15,2) NOT NULL,
-  prd_live_date DATE,
-  prd_notes TEXT,
-  prd_attachments JSONB, -- stores attachments in key-value pairs
-  prd_t_id INTEGER NOT NULL,    -- foreign key to 't_id' from tenants table
+---------- table deliverable_proposals ----------
+CREATE TYPE dp_stage_enum AS ENUM ('onboarding', 'script', 'production', 'ready', 'live', 'report');
+CREATE TYPE proposal_status_enum AS ENUM ('draft', 'pending_approval', 'approved', 'rejected');
+CREATE TYPE cart_status_enum AS ENUM ('draft', 'sent_to_brand', 'reviewed');
+
+CREATE TYPE dp_status_enum AS ENUM (
+  -- Onboarding Stage
+  'onboarding_pending_email',
+  'waiting_influencer_onboarding_response',
+  'influencer_declined_onboarding',
+  'influencer_confirmed_onboarding',
+  'tc_sent_waiting_response',
+  'influencer_declined_tc',
+  'influencer_approved_tc',
+  
+  -- Script Stage
+  'script_request_pending',
+  'waiting_script_submission',
+  'script_received_pending_review',
+  'script_approved_request_assets',
+  'script_sent_to_client',
+  'script_changes_requested',
+  
+  -- Production Stage
+  'assets_request_pending',
+  'waiting_assets_submission',
+  'assets_received_pending_review',
+  'assets_approved_request_deliverable',
+  'assets_sent_to_client',
+  'assets_changes_requested',
+  'waiting_deliverable_submission',
+  'deliverable_received_pending_review',
+  'deliverable_approved',
+  'deliverable_sent_to_client',
+  'deliverable_changes_requested',
+  
+  -- Ready Stage
+  'ready_for_publishing',
+  'waiting_live_link_submission',
+  
+  -- Live Stage
+  'live_link_received',
+  'content_live',
+  'waiting_insights_request',
+  
+  -- Report Stage
+  'insights_requested',
+  'waiting_insights_submission',
+  'insights_received_pending_review',
+  'insights_approved',
+  'campaign_completed'
+);
+
+CREATE TABLE deliverable_proposals (
+  dp_id BIGSERIAL PRIMARY KEY,
+  dp_influencer_proposal_id INTEGER NOT NULL,    -- foreign key to 'ip_id' from influencer_proposals table
+  dp_platform_deliverable_id INTEGER NOT NULL,    -- foreign key to 'pd_id' from platform_deliverables table
+  dp_agreed_price DECIMAL(15,2) NOT NULL,
+  dp_live_date DATE,
+  dp_notes TEXT,
+  dp_t_id INTEGER NOT NULL,    -- foreign key to 't_id' from tenants table
+  
+  -- PROPOSAL STATUS
+  dp_proposal_status proposal_status_enum NOT NULL DEFAULT 'draft',
+  
+  -- EXECUTION WORKFLOW (Only set after approval)
+  dp_stage dp_stage_enum,           -- NULL until approved
+  dp_status dp_status_enum,         -- NULL until approved
+  dp_is_active BOOLEAN NOT NULL DEFAULT true,
+  
+  -- Stage completion tracking for UI progress indicators
+  dp_onboarding_completed BOOLEAN NOT NULL DEFAULT false,
+  dp_script_completed BOOLEAN NOT NULL DEFAULT false,
+  dp_script_skipped BOOLEAN NOT NULL DEFAULT false,
+  dp_production_completed BOOLEAN NOT NULL DEFAULT false,
+  dp_production_skipped BOOLEAN NOT NULL DEFAULT false,
+  dp_ready_completed BOOLEAN NOT NULL DEFAULT false,
+  dp_live_completed BOOLEAN NOT NULL DEFAULT false,
+  dp_report_completed BOOLEAN NOT NULL DEFAULT false,
+  
+  -- Workflow tracking timestamps
+  dp_onboarding_email_sent_at TIMESTAMP WITH TIME ZONE,
+  dp_onboarding_completed_at TIMESTAMP WITH TIME ZONE,
+  dp_tc_sent_at TIMESTAMP WITH TIME ZONE,
+  dp_script_requested_at TIMESTAMP WITH TIME ZONE,
+  dp_script_completed_at TIMESTAMP WITH TIME ZONE,
+  dp_script_skipped_at TIMESTAMP WITH TIME ZONE,
+  dp_assets_requested_at TIMESTAMP WITH TIME ZONE,
+  dp_production_completed_at TIMESTAMP WITH TIME ZONE,
+  dp_production_skipped_at TIMESTAMP WITH TIME ZONE,
+  dp_ready_completed_at TIMESTAMP WITH TIME ZONE,
+  dp_live_link_submitted_at TIMESTAMP WITH TIME ZONE,
+  dp_live_completed_at TIMESTAMP WITH TIME ZONE,
+  dp_insights_requested_at TIMESTAMP WITH TIME ZONE,
+  dp_report_completed_at TIMESTAMP WITH TIME ZONE,
+  
   -- audit and logs
   created_by VARCHAR(100) NOT NULL DEFAULT current_user,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
@@ -994,19 +1090,23 @@ CREATE TABLE proposal_deliverables (
   deleted_at TIMESTAMP WITH TIME ZONE,
   deleted_by VARCHAR(100),
   -- Foreign key constraints
-  CONSTRAINT fk_proposal_deliverables_prd_ip_id FOREIGN KEY (prd_ip_id) REFERENCES influencer_proposals(ip_id) ON DELETE RESTRICT,
-  CONSTRAINT fk_proposal_deliverables_prd_pd_id FOREIGN KEY (prd_pd_id) REFERENCES platform_deliverables(pd_id) ON DELETE RESTRICT,
-  CONSTRAINT fk_proposal_deliverables_prd_t_id FOREIGN KEY (prd_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_deliverable_proposals_dp_ip_id FOREIGN KEY (dp_influencer_proposal_id) REFERENCES influencer_proposals(ip_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_deliverable_proposals_dp_pd_id FOREIGN KEY (dp_platform_deliverable_id) REFERENCES platform_deliverables(pd_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_deliverable_proposals_dp_t_id FOREIGN KEY (dp_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,
   -- constraints
-  CONSTRAINT chk_price_positive CHECK (prd_agreed_price >= 0)
+  CONSTRAINT chk_price_positive CHECK (dp_agreed_price >= 0)
 );
 
 ---------- table cart ----------
 CREATE TABLE cart_details (
   cr_id BIGSERIAL PRIMARY KEY,
-  cr_name TEXT NOT NULL,
+  cr_name TEXT NOT NULL,                            -- "Q1 Fashion Campaign Cart"
   cr_estimated_total DECIMAL(15,2) DEFAULT 0,
-  cr_t_id INTEGER NOT NULL,    -- foreign key to 't_id' from tenants table
+  cr_status cart_status_enum NOT NULL DEFAULT 'draft',
+  cr_sent_to_brand_at TIMESTAMP WITH TIME ZONE,     -- When cart was sent to brand
+  cr_reviewed_at TIMESTAMP WITH TIME ZONE,          -- When brand finished reviewing
+  cr_brand_notes TEXT,                              -- Brand's overall feedback
+  cr_t_id INTEGER NOT NULL,
   -- audit and logs
   created_by VARCHAR(100) NOT NULL DEFAULT current_user,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
@@ -1025,9 +1125,152 @@ CREATE TABLE cart_details (
 ---------- table cart_items ----------
 CREATE TABLE cart_items (
   ci_id BIGSERIAL PRIMARY KEY,
-  ci_cr_id INTEGER NOT NULL,    -- foreign key to 'cr_id' from cart table
-  ci_prd_id INTEGER NOT NULL,    -- foreign key to 'prd_id' from proposal_deliverables table
-  ci_t_id INTEGER NOT NULL,    -- foreign key to 't_id' from tenants table
+  ci_cr_id INTEGER NOT NULL,                        -- foreign key to 'cr_id' from cart_details table
+  ci_dp_id INTEGER NOT NULL,                        -- foreign key to 'dp_id' from deliverable_proposals table (FIXED)
+  ci_t_id INTEGER NOT NULL,
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- Foreign key constraints (FIXED)
+  CONSTRAINT fk_cart_items_cart FOREIGN KEY (ci_cr_id) REFERENCES cart_details(cr_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_cart_items_deliverable FOREIGN KEY (ci_dp_id) REFERENCES deliverable_proposals(dp_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_cart_items_tenant FOREIGN KEY (ci_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,  
+  -- Prevent duplicate deliverables in same cart
+  CONSTRAINT unique_deliverable_per_cart UNIQUE (ci_cr_id, ci_dp_id)
+);
+
+---------- table brand_approvals ----------
+CREATE TYPE approval_action_enum AS ENUM ('approved', 'rejected', 'requested_changes');
+
+CREATE TABLE brand_approvals (
+  ba_id BIGSERIAL PRIMARY KEY,
+  ba_dp_id INTEGER NOT NULL,                        -- foreign key to deliverable_proposals
+  ba_action approval_action_enum NOT NULL,
+  ba_notes TEXT,                                    -- Brand's specific feedback for this deliverable
+  ba_approved_by_user_id INTEGER NOT NULL,         -- Brand user who made the decision
+  ba_approved_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  ba_t_id INTEGER NOT NULL,
+  
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  
+  -- Foreign key constraints
+  CONSTRAINT fk_brand_approvals_dp_id FOREIGN KEY (ba_dp_id) REFERENCES deliverable_proposals(dp_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_brand_approvals_user FOREIGN KEY (ba_approved_by_user_id) REFERENCES users(u_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_brand_approvals_t_id FOREIGN KEY (ba_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT
+);
+
+---------- table deliverable_proposals_activity ----------
+CREATE TYPE dpa_action_type_enum AS ENUM (
+  'email_sent', 'reminder_sent', 'tc_sent', 'script_requested', 'assets_requested', 
+  'deliverable_requested', 'live_link_requested', 'insights_requested',
+  'onboarding_accepted', 'onboarding_declined', 'tc_accepted', 'tc_declined',
+  'script_submitted', 'assets_submitted', 'deliverable_submitted', 
+  'live_link_submitted', 'insights_submitted', 'script_approved', 'script_rejected', 
+  'assets_approved', 'assets_rejected', 'deliverable_approved', 'deliverable_rejected', 
+  'insights_approved', 'insights_rejected', 'script_sent_to_client', 'assets_sent_to_client', 
+  'deliverable_sent_to_client', 'changes_suggested', 'status_updated', 'stage_updated', 
+  'stage_completed', 'stage_skipped', 'influencer_removed', 'comment_added'
+);
+
+CREATE TYPE dpa_actor_type_enum AS ENUM ('agency_user', 'influencer', 'brand_user', 'system');
+
+CREATE TABLE deliverable_proposals_activity (
+  dpa_id                  BIGSERIAL PRIMARY KEY,
+  dpa_dp_id               INTEGER NOT NULL,    -- foreign key to 'dp_id' from deliverable_proposals table
+  dpa_action_type         dpa_action_type_enum NOT NULL,
+  dpa_action_description  TEXT,
+  dpa_actor_type          dpa_actor_type_enum NOT NULL,
+  dpa_actor_u_id          INTEGER, -- foreign key to 'u_id' from users table, can be NULL for system actions
+  dpa_previous_status     dp_status_enum,
+  dpa_new_status          dp_status_enum,
+  dpa_previous_stage      dp_stage_enum,
+  dpa_new_stage           dp_stage_enum,
+  dpa_metadata            JSONB,        -- additional data like file IDs, email templates used, etc.
+  dpa_timestamp           TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  dpa_t_id                INTEGER NOT NULL,  -- foreign key to 't_id' from tenants table
+ -- audit and logs
+  created_by              VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at              TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by             VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at             TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted              BOOLEAN NOT NULL DEFAULT false,
+  deleted_at              TIMESTAMP WITH TIME ZONE,
+  deleted_by              VARCHAR(100),
+  -- Foreign key constraints
+  CONSTRAINT fk_deliverable_activity_dp_id FOREIGN KEY (dpa_dp_id) REFERENCES deliverable_proposals(dp_id) ON DELETE CASCADE,
+  CONSTRAINT fk_deliverable_activity_t_id FOREIGN KEY (dpa_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_deliverable_activity_actor FOREIGN KEY (dpa_actor_u_id) REFERENCES users(u_id) ON DELETE RESTRICT
+);
+
+---------- table deliverable_attachments ----------
+CREATE TYPE da_category_enum AS ENUM ('script', 'assets', 'deliverable', 'live_link', 'insights', 'tc_document', 'other');
+CREATE TYPE da_status_enum AS ENUM ('uploaded', 'approved', 'rejected', 'sent_to_client', 'revision_requested');
+
+CREATE TABLE deliverable_attachments (
+  da_id                 BIGSERIAL PRIMARY KEY,
+  da_dp_id              INTEGER NOT NULL,    -- foreign key to 'dp_id' from deliverable_proposals table
+  da_category           da_category_enum NOT NULL,
+  da_file_name          VARCHAR(255) NOT NULL,
+  da_file_url           VARCHAR(500) NOT NULL,
+  da_file_size_bytes    BIGINT,
+  da_mime_type          VARCHAR(100),
+  da_status             da_status_enum NOT NULL DEFAULT 'uploaded',
+  da_uploaded_by_type   dpa_actor_type_enum NOT NULL,
+  da_uploaded_by_id     INTEGER, -- foreign key to 'u_id' from users table, can be NULL for system uploads
+  da_approved_by_id     INTEGER, -- foreign key to 'u_id' from users table, can be NULL if not approved yet
+  da_approved_at        TIMESTAMP WITH TIME ZONE,
+  da_rejection_reason   TEXT,
+  da_version            INTEGER NOT NULL DEFAULT 1,
+  da_is_current_version BOOLEAN NOT NULL DEFAULT true,
+  da_t_id               INTEGER NOT NULL,    -- foreign key to 't_id' from tenants table
+  -- audit and logs
+  created_by            VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at            TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by           VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at           TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted            BOOLEAN NOT NULL DEFAULT false,
+  deleted_at            TIMESTAMP WITH TIME ZONE,
+  deleted_by            VARCHAR(100),
+  -- Foreign key constraints
+  CONSTRAINT fk_deliverable_attachments_dp_id FOREIGN KEY (da_dp_id) REFERENCES deliverable_proposals(dp_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_deliverable_attachments_t_id FOREIGN KEY (da_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_deliverable_attachments_uploaded_by FOREIGN KEY (da_uploaded_by_id) REFERENCES users(u_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_deliverable_attachments_approved_by FOREIGN KEY (da_approved_by_id) REFERENCES users(u_id) ON DELETE RESTRICT
+);
+
+---------- table deliverable_approvals ----------
+CREATE TYPE approval_type_enum AS ENUM ('script', 'assets', 'deliverable', 'insights');
+CREATE TYPE approval_status_enum AS ENUM ('pending', 'approved', 'rejected', 'sent_to_client');
+
+CREATE TABLE deliverable_approvals (
+  dap_id BIGSERIAL PRIMARY KEY,
+  dap_dp_id INTEGER NOT NULL,    -- foreign key to 'dp_id' from deliverable_proposals table
+  dap_approval_type approval_type_enum NOT NULL,
+  dap_status approval_status_enum NOT NULL DEFAULT 'pending',
+  dap_approved_by_id INTEGER, -- foreign key to 'u_id' from users table, can be NULL if not approved yet
+  dap_approved_at TIMESTAMP WITH TIME ZONE,
+  dap_rejection_reason TEXT,
+  dap_client_feedback TEXT,
+  dap_ai_suggestions TEXT, -- AI generated suggestions
+  dap_attachment_ids JSONB, -- array of attachment IDs being approved
+  dap_t_id INTEGER NOT NULL,    -- foreign key to 't_id' from tenants table
+  
   -- audit and logs
   created_by VARCHAR(100) NOT NULL DEFAULT current_user,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
@@ -1038,9 +1281,40 @@ CREATE TABLE cart_items (
   deleted_at TIMESTAMP WITH TIME ZONE,
   deleted_by VARCHAR(100),
   -- Foreign key constraints
-  CONSTRAINT fk_cart_items_cart FOREIGN KEY (ci_cr_id) REFERENCES cart_details(cr_id) ON DELETE RESTRICT,
-  CONSTRAINT fk_cart_items_deliverable FOREIGN KEY (ci_prd_id) REFERENCES proposal_deliverables(prd_id) ON DELETE RESTRICT,
-  CONSTRAINT fk_cart_items_tenant FOREIGN KEY (ci_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT
+  CONSTRAINT fk_deliverable_approvals_dp_id FOREIGN KEY (dap_dp_id) REFERENCES deliverable_proposals(dp_id) ON DELETE CASCADE,
+  CONSTRAINT fk_deliverable_approvals_t_id FOREIGN KEY (dap_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_deliverable_approvals_approved_by FOREIGN KEY (dap_approved_by_id) REFERENCES users(u_id) ON DELETE SET NULL
+);
+
+---------- table deliverable_comments ----------
+CREATE TYPE comment_actor_type_enum AS ENUM ('agency_user', 'influencer', 'brand_user');
+
+CREATE TABLE deliverable_comments (
+  dc_id BIGSERIAL PRIMARY KEY,
+  dc_dp_id INTEGER NOT NULL,    -- foreign key to 'dp_id' from deliverable_proposals table
+  dc_stage dp_stage_enum NOT NULL, -- which stage this comment belongs to
+  dc_comment_text TEXT NOT NULL,
+  dc_actor_type comment_actor_type_enum NOT NULL,
+  dc_actor_id INTEGER, -- user ID who commented
+  dc_actor_name VARCHAR(255), -- name of the person commenting
+  dc_actor_avatar_url VARCHAR(500), -- avatar URL
+  dc_parent_comment_id INTEGER, -- for reply structure
+  dc_attachments JSONB, -- optional file attachments in comments
+  dc_t_id INTEGER NOT NULL,    -- foreign key to 't_id' from tenants table
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- Foreign key constraints
+  CONSTRAINT fk_deliverable_comments_dp_id FOREIGN KEY (dc_dp_id) REFERENCES deliverable_proposals(dp_id) ON DELETE CASCADE,
+  CONSTRAINT fk_deliverable_comments_parent FOREIGN KEY (dc_parent_comment_id) REFERENCES deliverable_comments(dc_id) ON DELETE CASCADE,
+  CONSTRAINT fk_deliverable_comments_t_id FOREIGN KEY (dc_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_deliverable_comments_actor FOREIGN KEY (dc_actor_id) REFERENCES users(u_id) ON DELETE RESTRICT
 );
 
 -- =================================================================================================================
@@ -1097,12 +1371,24 @@ FOR EACH ROW
 EXECUTE FUNCTION trg_auto_create_tenant_for_brand();
 
 
--- ========== Trigger to insert data of auth.users to public.users table ==========
----------- trigger function ----------
+-- ========== CORRECTED: Auth user sync trigger ==========
 CREATE OR REPLACE FUNCTION public.sync_auth_user_to_public_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  first_name TEXT;
+  last_name TEXT;
 BEGIN
-  INSERT INTO public.users (
+  -- Extract first word
+  first_name := split_part(NEW.display_name, ' ', 1);
+  
+  -- Extract remainder as last_name if exists
+  IF position(' ' IN NEW.display_name) > 0 THEN
+    last_name := substring(NEW.display_name FROM position(' ' IN NEW.display_name) + 1);
+  ELSE
+    last_name := NULL;
+  END IF;
+
+  INSERT INTO public.users (  -- FIXED: Corrected table name
     u_id_auth,
     u_first_name,
     u_last_name,
@@ -1112,8 +1398,8 @@ BEGIN
   )
   VALUES (
     NEW.id,
-    NEW.metadata->>'first_name',
-    NEW.metadata->>'last_name',
+    first_name,
+    last_name,
     CASE WHEN NEW.email_verified THEN NOW() ELSE NULL END,
     CASE WHEN NEW.phone_number_verified THEN NOW() ELSE NULL END,
     NEW.avatar_url
@@ -1128,3 +1414,146 @@ CREATE TRIGGER trg_insert_auth_user_to_public_user
 AFTER INSERT ON auth.users
 FOR EACH ROW
 EXECUTE FUNCTION public.sync_auth_user_to_public_user();
+
+
+-- ========== Trigger to log all deliverable status changes ==========
+CREATE OR REPLACE FUNCTION trg_log_deliverable_status_change()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Only log if status or stage actually changed
+  IF OLD.dp_status != NEW.dp_status OR OLD.dp_stage != NEW.dp_stage THEN
+    INSERT INTO deliverable_proposals_activity (
+      dpa_dp_id,
+      dpa_action_type,
+      dpa_action_description,
+      dpa_actor_type,
+      dpa_previous_status,
+      dpa_new_status,
+      dpa_previous_stage,
+      dpa_new_stage,
+      dpa_t_id
+    ) VALUES (
+      NEW.dp_id,
+      'status_updated',
+      CONCAT('Status changed from ', OLD.dp_status, ' to ', NEW.dp_status),
+      'system',
+      OLD.dp_status,
+      NEW.dp_status,
+      OLD.dp_stage,
+      NEW.dp_stage,
+      NEW.dp_t_id
+    );
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_deliverable_status_change
+AFTER UPDATE ON deliverable_proposals
+FOR EACH ROW
+EXECUTE FUNCTION trg_log_deliverable_status_change();
+
+-- ========== Trigger to create initial workflow state ==========
+CREATE OR REPLACE FUNCTION trg_create_initial_deliverable_activity()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO deliverable_proposals_activity (
+    dpa_dp_id,
+    dpa_action_type,
+    dpa_action_description,
+    dpa_actor_type,
+    dpa_new_status,
+    dpa_new_stage,
+    dpa_t_id
+  ) VALUES (
+    NEW.dp_id,
+    'status_updated',
+    'Deliverable created with initial status',
+    'system',
+    NEW.dp_status,
+    NEW.dp_stage,
+    NEW.dp_t_id
+  );
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_deliverable_created
+AFTER INSERT ON deliverable_proposals
+FOR EACH ROW
+EXECUTE FUNCTION trg_create_initial_deliverable_activity();
+
+
+
+-- ========== Trigger to update deliverable status when brand approves/rejects ==========
+CREATE OR REPLACE FUNCTION trg_update_deliverable_on_brand_approval()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Update deliverable proposal status based on brand approval
+  IF NEW.ba_action = 'approved' THEN
+    UPDATE deliverable_proposals 
+    SET dp_proposal_status = 'approved',
+        dp_stage = 'onboarding',                    -- Start execution workflow
+        dp_status = 'onboarding_pending_email'     -- Initial execution status
+    WHERE dp_id = NEW.ba_dp_id;
+    
+  ELSIF NEW.ba_action = 'rejected' THEN
+    UPDATE deliverable_proposals 
+    SET dp_proposal_status = 'rejected'
+    WHERE dp_id = NEW.ba_dp_id;
+    
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_brand_approval_updates_deliverable
+AFTER INSERT ON brand_approvals
+FOR EACH ROW
+EXECUTE FUNCTION trg_update_deliverable_on_brand_approval();
+
+---------- CORRECTED: Trigger to update cart status when all items are reviewed ----------
+CREATE OR REPLACE FUNCTION trg_update_cart_status_on_review()
+RETURNS TRIGGER AS $$
+DECLARE
+  cart_id INTEGER;
+  total_items INTEGER;
+  reviewed_items INTEGER;
+BEGIN
+  -- Get cart ID for this deliverable
+  SELECT ci_cr_id INTO cart_id 
+  FROM cart_items 
+  WHERE ci_dp_id = NEW.dp_id AND is_deleted = false
+  LIMIT 1;
+  
+  IF cart_id IS NOT NULL THEN
+    -- Count total items and reviewed items in this cart
+    SELECT 
+      COUNT(*),
+      COUNT(CASE WHEN dp.dp_proposal_status IN ('approved', 'rejected') THEN 1 END)
+    INTO total_items, reviewed_items
+    FROM cart_items ci
+    JOIN deliverable_proposals dp ON ci.ci_dp_id = dp.dp_id
+    WHERE ci.ci_cr_id = cart_id AND ci.is_deleted = false AND dp.is_deleted = false;
+    
+    -- If all items reviewed, mark cart as reviewed
+    IF reviewed_items = total_items THEN
+      UPDATE cart_details 
+      SET cr_status = 'reviewed',
+          cr_reviewed_at = NOW()
+      WHERE cr_id = cart_id;
+    END IF;
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_cart_status_update_on_review
+AFTER UPDATE ON deliverable_proposals
+FOR EACH ROW
+WHEN (OLD.dp_proposal_status IS DISTINCT FROM NEW.dp_proposal_status AND NEW.dp_proposal_status IN ('approved', 'rejected'))
+EXECUTE FUNCTION trg_update_cart_status_on_review();
