@@ -10,7 +10,6 @@ select * from subscriptions;
 
 
 
-
 select * from auth.users;
 select * from public.app_users;
 

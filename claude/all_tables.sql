@@ -202,8 +202,8 @@ CREATE TYPE escrow_status_enum AS ENUM ('held', 'released', 'refunded');
 
 CREATE TABLE payments (
   pay_id BIGSERIAL PRIMARY KEY,
-  pay_sub_id INTEGER REFERENCES subscriptions(sub_id) ON DELETE SET NULL,
-  pay_t_id INTEGER NOT NULL,
+  pay_sub_id INTEGER,                -- foreign key to 'sub_id' from subscriptions table
+  pay_t_id INTEGER NOT NULL,         -- foreign key to 't_id' from tenants table
   pay_amount_inr NUMERIC(14,2) NOT NULL,
   pay_currency VARCHAR(10) DEFAULT 'INR',
   pay_status payment_status_enum NOT  NULL DEFAULT 'initiated',
@@ -214,6 +214,7 @@ CREATE TABLE payments (
   pay_invoice_id INTEGER REFERENCES invoices(i_id),
   pay_timestamp TIMESTAMP WITH TIME ZONE DEFAULT current_timestamp,
   pay_meta JSONB, -- webhook data
+  pay_pm_id INTEGER,
   -- audit and logs
   created_by VARCHAR(100) NOT NULL DEFAULT current_user,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
@@ -225,8 +226,75 @@ CREATE TABLE payments (
   -- Foreign Key Constraints
   CONSTRAINT fk_payments_pay_sub_id FOREIGN KEY (pay_sub_id) REFERENCES subscriptions(sub_id) ON DELETE SET NULL,
   CONSTRAINT fk_payments_pay_t_id FOREIGN KEY (pay_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_payments_payment_method FOREIGN KEY (pay_pm_id) REFERENCES payment_methods(pm_id) ON DELETE SET NULL,
   -- Unique constraint
   CONSTRAINT uk_payments_gateway_payment_id UNIQUE (pay_gateway, pay_gateway_payment_id)
+);
+
+---------- table payment_methods ----------
+CREATE TYPE payment_method_type_enum AS ENUM ('card', 'bank_account', 'wallet', 'upi');
+CREATE TYPE card_type_enum AS ENUM ('visa', 'mastercard', 'amex', 'discover', 'rupay', 'diners');
+
+CREATE TABLE payment_methods (
+  pm_id BIGSERIAL PRIMARY KEY,
+  pm_t_id INTEGER NOT NULL,                        -- foreign key to tenants
+  pm_user_id INTEGER NOT NULL,                     -- foreign key to app_users (who added this card)
+  pm_type payment_method_type_enum NOT NULL DEFAULT 'card',
+
+  -- Tokenized payment information (PCI compliant - never store actual card numbers)
+  pm_gateway VARCHAR(50) NOT NULL,                 -- 'razorpay', 'stripe', etc.
+  pm_gateway_token VARCHAR(255) NOT NULL,          -- Gateway's payment method token
+  pm_gateway_customer_id VARCHAR(255),             -- Gateway customer ID (links to subscription)
+  
+  -- Safe display information (last 4 digits only)
+  pm_card_last4 VARCHAR(4),                        -- "3105" or "1111"
+  pm_card_type card_type_enum,                     -- visa, mastercard, etc.
+  pm_expiry_month INTEGER,                         -- 1-12 (for UI display)
+  pm_expiry_year INTEGER,                          -- 2025, 2026, etc.
+  pm_cardholder_name VARCHAR(255),                 -- "Karan Mathiyalgan"
+  
+  -- Status and preferences
+  pm_is_primary BOOLEAN NOT NULL DEFAULT false,    -- Primary payment method for this tenant
+  pm_is_active BOOLEAN NOT NULL DEFAULT true,      -- Can this method be used?
+  pm_nickname VARCHAR(100),                        -- "Primary Card", "Backup Visa", "Corporate Card"
+  
+  -- Billing information (from your UI)
+  pm_billing_name VARCHAR(255),                    -- Can be different from cardholder name
+  pm_billing_email VARCHAR(255),
+  pm_billing_phone VARCHAR(20),
+  pm_billing_address TEXT,
+  pm_billing_city VARCHAR(100),                    -- "Mumbai"
+  pm_billing_state VARCHAR(100),                   -- "Maharashtra"
+  pm_billing_country VARCHAR(100),                 -- "India"
+  pm_billing_postal_code VARCHAR(20),              -- "400017"
+  
+  -- Gateway metadata
+  pm_fingerprint VARCHAR(255),                     -- Gateway fingerprint for duplicate detection
+  pm_last_used_at TIMESTAMP WITH TIME ZONE,        -- When this method was last used for payment
+  pm_verification_status VARCHAR(50) DEFAULT 'pending', -- 'verified', 'pending', 'failed'
+  
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  
+  -- Foreign key constraints
+  CONSTRAINT fk_payment_methods_tenant FOREIGN KEY (pm_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_payment_methods_user FOREIGN KEY (pm_user_id) REFERENCES app_users(u_id) ON DELETE RESTRICT,
+  
+  -- Constraints
+  CONSTRAINT uk_gateway_token UNIQUE (pm_gateway, pm_gateway_token),
+  CONSTRAINT uk_primary_per_tenant UNIQUE (pm_t_id, pm_is_primary) 
+    WHERE pm_is_primary = true AND is_deleted = false,
+  CONSTRAINT chk_expiry_month CHECK (pm_expiry_month BETWEEN 1 AND 12),
+  CONSTRAINT chk_expiry_year CHECK (pm_expiry_year >= EXTRACT(YEAR FROM CURRENT_DATE)),
+  CONSTRAINT chk_last4_digits CHECK (pm_card_last4 ~ '^[0-9]{4}$' OR pm_card_last4 IS NULL)
 );
 
 ---------- table usage_meters ----------
@@ -306,14 +374,14 @@ CREATE TABLE app_users (
   --u_email VARCHAR(255) NOT NULL,
   --u_phone_number VARCHAR(20) NOT NULL,
   --u_password VARCHAR(255) NOT NULL,  -- hashed password
-  --u_oauth_token VARCHAR(500),    -- not null from front end
+  --u_oauth_token VARCHAR(500),    -- not null from front-end
   --u_oauth_provider VARCHAR(50),  -- Google, Facebook, etc.
   u_is_authorized BOOLEAN NOT NULL DEFAULT false,    -- boolean for invited members only to workspace
   u_user_type user_type_enum NOT NULL DEFAULT 'general',
   u_status user_status_enum NOT NULL DEFAULT 'pending_verification',
-  u_t_id INTEGER,    -- foreign key to 't_id' from tenants table
+  u_t_id INTEGER,     -- foreign key to 't_id' from tenants table
   u_tm_id INTEGER,    -- foreign key to 'tm_id' from teams table
-  u_r_id INTEGER,    -- foreign key to 'r_id' from roles table
+  u_r_id INTEGER,     -- foreign key to 'r_id' from roles table
   u_is_workspace_admin BOOLEAN NOT NULL DEFAULT false,
   u_last_login TIMESTAMP WITH TIME ZONE,
   u_locked_until TIMESTAMP WITH TIME ZONE,
@@ -322,6 +390,18 @@ CREATE TABLE app_users (
   u_avatar_url VARCHAR(500),
   u_timezone VARCHAR(50) DEFAULT 'UTC',
   u_is_gods_eye BOOLEAN NOT NULL DEFAULT false,  -- for super admin
+  u_industry VARCHAR(100),  -- for agency or brand users
+  u_about TEXT,             -- short biography or description
+  u_designation VARCHAR(100),  -- job title or position
+  u_mail_details JSONB,  -- additional details for email notifications
+  -- security settings
+  u_login_attempts_count INTEGER DEFAULT 0,
+  u_last_failed_login TIMESTAMP WITH TIME ZONE,
+  u_account_locked_until TIMESTAMP WITH TIME ZONE,
+  u_security_alerts_enabled BOOLEAN NOT NULL DEFAULT true,
+  u_backup_codes_generated_at TIMESTAMP WITH TIME ZONE,
+  u_password_changed_at TIMESTAMP WITH TIME ZONE,
+  u_security_settings JSONB DEFAULT '{}'::jsonb,
   -- audit and logs
   created_by VARCHAR(100) NOT NULL DEFAULT current_user,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
@@ -1536,3 +1616,129 @@ CREATE TABLE global_locations
   deleted_at TIMESTAMP WITH TIME ZONE,
   deleted_by VARCHAR(100)
 );
+
+
+-- =================================================================================================================
+-- ******************************************* LOGIN & SECURITY TABLES *********************************************
+-- =================================================================================================================
+
+---------- table mfa_backup_codes ----------
+CREATE TABLE mfa_backup_codes (
+  mbc_id BIGSERIAL PRIMARY KEY,
+  mbc_u_id BIGINT NOT NULL,    -- foreign key to app_users(u_id)
+  mbc_code_hash VARCHAR(255) NOT NULL,     -- Hashed backup code
+  mbc_used_at TIMESTAMP WITH TIME ZONE,    -- NULL if unused
+  mbc_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  mbc_is_active BOOLEAN NOT NULL DEFAULT true,
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- Foreign key constraints
+  CONSTRAINT fk_backup_codes_user FOREIGN KEY (mbc_u_id) REFERENCES public.app_users(u_id) ON DELETE CASCADE,
+  -- constraints
+  CONSTRAINT uk_backup_code_hash UNIQUE (mbc_code_hash)
+);
+
+---------- table user_devices ----------
+-- Create device type and status enums
+CREATE TYPE IF NOT EXISTS device_type_enum AS ENUM ('desktop', 'mobile', 'tablet', 'unknown');
+CREATE TYPE IF NOT EXISTS device_status_enum AS ENUM ('active', 'inactive', 'blocked', 'suspicious');
+
+CREATE TABLE user_devices (
+  ud_id BIGSERIAL PRIMARY KEY,
+  ud_u_id BIGINT NOT NULL,                         -- foreign key to app_users(u_id)
+  ud_device_name VARCHAR(255),                     -- "Windows 11 PC", "MacBook Air M2"
+  ud_device_type device_type_enum NOT NULL DEFAULT 'unknown',
+  ud_browser VARCHAR(100),                         -- "Chrome", "Safari", "Firefox"
+  ud_os VARCHAR(100),                              -- "Windows", "macOS", "iOS"
+  ud_ip_address INET,                              -- Current/last known IP
+  ud_location_city VARCHAR(100),                   -- "Mumbai", "Melbourne"
+  ud_location_country VARCHAR(100),                -- "India", "Australia"
+  ud_is_trusted BOOLEAN NOT NULL DEFAULT false,
+  ud_status device_status_enum NOT NULL DEFAULT 'active',
+  ud_first_seen_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  ud_last_login_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  ud_login_count INTEGER NOT NULL DEFAULT 0,
+  -- audit and logs 
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  --soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- Foreign key constraints
+  CONSTRAINT fk_user_devices_user FOREIGN KEY (ud_u_id) REFERENCES app_users(u_id) ON DELETE CASCADE
+);
+
+---------- table user_sessions ----------
+CREATE TABLE user_sessions (
+  us_id BIGSERIAL PRIMARY KEY,
+  us_u_id BIGINT NOT NULL,                         -- foreign key to app_users(u_id)
+  us_device_id BIGINT NOT NULL,                    -- foreign key to user_devices(ud_id)
+  us_nhost_refresh_token_id UUID,                  -- Links to auth.refresh_tokens (nullable)
+  us_session_key VARCHAR(255) NOT NULL,            -- Our custom session identifier
+  us_expires_at TIMESTAMP WITH TIME ZONE NOT NULL, -- 7 days from last activity
+  us_is_active BOOLEAN NOT NULL DEFAULT true,
+  us_last_activity_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- audit and logs 
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  --soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- Foreign key constraints
+  CONSTRAINT fk_extended_sessions_user FOREIGN KEY (us_u_id) REFERENCES app_users(u_id) ON DELETE CASCADE,
+  CONSTRAINT fk_extended_sessions_device FOREIGN KEY (us_device_id) REFERENCES user_devices(ud_id) ON DELETE CASCADE,
+  -- constraints
+  CONSTRAINT uk_session_key UNIQUE (us_session_key)
+);
+
+---------- table user_device_sessions ---------- 
+-- Create security event enums
+CREATE TYPE IF NOT EXISTS security_event_type_enum AS ENUM (
+  'login_success', 'login_failed', 'login_blocked', 'password_reset', 'email_changed', 'phone_changed',
+  'mfa_enabled', 'mfa_disabled', 'backup_codes_generated', 'backup_code_used',
+  'device_added', 'device_blocked', 'device_trusted', 'device_logout',
+  'suspicious_activity', 'account_locked', 'account_unlocked', 'password_changed', 
+  'profile_updated', 'security_settings_changed', 'session_expired', 'logout',
+  'mfa_backup_code_used', 'mfa_backup_code_failed', 'session_hijack_detected', 
+  'concurrent_session_detected', 'location_change_detected', 'device_fingerprint_changed'
+);
+
+CREATE TABLE user_security_events (
+  use_id BIGSERIAL PRIMARY KEY,
+  use_u_id BIGINT NOT NULL,                        -- Foreign key to app_users(u_id)
+  use_event_type security_event_type_enum NOT NULL,
+  use_device_id BIGINT,                            -- Links to user_devices (gets location from there)
+  use_ip_address INET,                             -- IP when event occurred (may differ from device IP)
+  use_success BOOLEAN,
+  use_failure_reason TEXT,
+  use_metadata JSONB DEFAULT '{}'::jsonb,
+  use_risk_score INTEGER DEFAULT 0,
+  use_timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  --soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- Foreign key constraints
+  CONSTRAINT fk_security_events_user FOREIGN KEY (use_u_id) REFERENCES app_users(u_id) ON DELETE CASCADE,
+  CONSTRAINT fk_security_events_device FOREIGN KEY (use_device_id) REFERENCES user_devices(ud_id) ON DELETE SET NULL
+);
+
+

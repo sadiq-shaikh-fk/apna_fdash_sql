@@ -276,6 +276,13 @@ UPDATE app_users SET u_tm_id = 1 WHERE u_id IN (8, 9, 10, 11, 12, 13);
 -- Assign user 14 to Client Success (tm_id = 10)
 UPDATE app_users SET u_tm_id = 10 WHERE u_id = 14;
 
+-- ----- inserting data on user_sessions and user_devices using SQL Functions (ONLY FOR TESTING) -----
+-- SELECT handle_user_login(1, 'iPhone 15', 'mobile', 'Safari', 'iOS', '192.168.1.101'::inet, 'Mumbai', 'India'); 
+-- SELECT handle_user_login(2, 'Windows PC', 'desktop', 'Edge', 'Windows', '192.168.1.102'::inet, 'Delhi', 'India');
+-- SELECT handle_user_login(2, 'iPhone 15', 'mobile', 'Safari', 'iOS', '192.168.1.101'::inet, 'Mumbai', 'India'); 
+-- SELECT handle_user_login(2, 'Windows PC', 'desktop', 'Edge', 'Windows', '192.168.1.102'::inet, 'Delhi', 'India');
+-- SELECT handle_user_login(3, 'iPhone 15', 'mobile', 'Safari', 'iOS', '192.168.1.101'::inet, 'Mumbai', 'India'); 
+-- SELECT handle_user_login(3, 'Windows PC', 'desktop', 'Edge', 'Windows', '192.168.1.102'::inet, 'Delhi', 'India');
 
 ---------- insert into filters ----------
 -- Amazon Macro Influencers #1
