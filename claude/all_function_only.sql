@@ -635,3 +635,440 @@ BEGIN
   LIMIT limit_val;
 END;
 $$ LANGUAGE plpgsql;
+
+
+
+-- =================================================================================================================
+-- ******************************* RECENTLY VIEWWS INFLUENCERS *****************************************************
+-- =================================================================================================================
+
+-- Function to handle recently viewed influencers with automatic cleanup
+CREATE OR REPLACE FUNCTION track_recently_viewed_influencer(
+  user_id_val INTEGER,
+  influencer_id_val INTEGER,
+  tenant_id_val INTEGER,
+  max_recent_items INTEGER DEFAULT 50
+)
+RETURNS VOID AS $$
+BEGIN
+  -- UPSERT: Insert new record or update existing one
+  INSERT INTO recently_viewed_influencers (
+    rvi_u_id, 
+    rvi_inf_id, 
+    rvi_t_id, 
+    rvi_viewed_at
+  ) VALUES (
+    user_id_val, 
+    influencer_id_val, 
+    tenant_id_val, 
+    NOW()
+  )
+  ON CONFLICT (rvi_u_id, rvi_inf_id) 
+  DO UPDATE SET 
+    rvi_viewed_at = NOW(),
+    modified_at = NOW(),
+    modified_by = current_user
+  WHERE recently_viewed_influencers.is_deleted = false;
+  
+  -- Cleanup: Keep only the most recent N items per user
+  WITH ranked_views AS (
+    SELECT rvi_id,
+           ROW_NUMBER() OVER (
+             PARTITION BY rvi_u_id 
+             ORDER BY rvi_viewed_at DESC
+           ) as rn
+    FROM recently_viewed_influencers 
+    WHERE rvi_u_id = user_id_val 
+      AND rvi_t_id = tenant_id_val
+      AND is_deleted = false
+  )
+  UPDATE recently_viewed_influencers 
+  SET is_deleted = true,
+      deleted_at = NOW(),
+      deleted_by = current_user
+  WHERE rvi_id IN (
+    SELECT rvi_id 
+    FROM ranked_views 
+    WHERE rn > max_recent_items
+  );
+  
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- Function to get recently viewed influencers for a user
+CREATE OR REPLACE FUNCTION get_recently_viewed_influencers(
+  user_id_val INTEGER,
+  tenant_id_val INTEGER,
+  limit_val INTEGER DEFAULT 20
+)
+RETURNS TABLE (
+  influencer_id INTEGER,
+  influencer_name VARCHAR(255),
+  primary_platform_name VARCHAR(100),
+  viewed_at TIMESTAMP WITH TIME ZONE,
+  days_ago INTEGER
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    i.inf_id as influencer_id,
+    i.inf_name as influencer_name,
+    p.p_name as primary_platform_name,
+    rvi.rvi_viewed_at as viewed_at,
+    EXTRACT(days FROM NOW() - rvi.rvi_viewed_at)::INTEGER as days_ago
+  FROM recently_viewed_influencers rvi
+  JOIN influencers i ON rvi.rvi_inf_id = i.inf_id
+  LEFT JOIN platforms p ON i.inf_primary_platform_id = p.p_id
+  WHERE rvi.rvi_u_id = user_id_val 
+    AND rvi.rvi_t_id = tenant_id_val
+    AND rvi.is_deleted = false
+    AND i.is_deleted = false
+  ORDER BY rvi.rvi_viewed_at DESC
+  LIMIT limit_val;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Cleanup function to remove old viewed records (run as scheduled job)
+CREATE OR REPLACE FUNCTION cleanup_old_recently_viewed(
+  retention_days INTEGER DEFAULT 90
+)
+RETURNS INTEGER AS $$
+DECLARE
+  deleted_count INTEGER;
+BEGIN
+  -- Soft delete records older than retention period
+  UPDATE recently_viewed_influencers 
+  SET is_deleted = true,
+      deleted_at = NOW(),
+      deleted_by = 'system_cleanup'
+  WHERE rvi_viewed_at < NOW() - (retention_days || ' days')::INTERVAL
+    AND is_deleted = false;
+  
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  
+  RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- Function to toggle saved influencer status
+CREATE OR REPLACE FUNCTION toggle_saved_influencer(
+  user_id_val INTEGER,
+  influencer_id_val INTEGER,
+  tenant_id_val INTEGER
+)
+RETURNS JSON AS $$
+DECLARE
+  existing_record RECORD;
+  result JSON;
+BEGIN
+  -- Check if record exists
+  SELECT si_id, is_deleted INTO existing_record
+  FROM saved_influencers 
+  WHERE si_u_id = user_id_val 
+    AND si_inf_id = influencer_id_val;
+  
+  IF existing_record.si_id IS NULL THEN
+    -- Insert new saved record
+    INSERT INTO saved_influencers (si_u_id, si_inf_id, si_t_id)
+    VALUES (user_id_val, influencer_id_val, tenant_id_val);
+    
+    result := json_build_object(
+      'action', 'saved',
+      'is_saved', true,
+      'message', 'Influencer added to saved list'
+    );
+    
+  ELSIF existing_record.is_deleted = true THEN
+    -- Restore deleted record
+    UPDATE saved_influencers 
+    SET is_deleted = false,
+        deleted_at = NULL,
+        deleted_by = NULL,
+        modified_at = NOW(),
+        modified_by = current_user
+    WHERE si_u_id = user_id_val 
+      AND si_inf_id = influencer_id_val;
+    
+    result := json_build_object(
+      'action', 'restored',
+      'is_saved', true,
+      'message', 'Influencer restored to saved list'
+    );
+    
+  ELSE
+    -- Remove from saved (soft delete)
+    UPDATE saved_influencers 
+    SET is_deleted = true,
+        deleted_at = NOW(),
+        deleted_by = current_user,
+        modified_at = NOW()
+    WHERE si_u_id = user_id_val 
+      AND si_inf_id = influencer_id_val;
+    
+    result := json_build_object(
+      'action', 'unsaved',
+      'is_saved', false,
+      'message', 'Influencer removed from saved list'
+    );
+  END IF;
+  
+  RETURN result;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to handle recently viewed influencers with automatic cleanup
+CREATE OR REPLACE FUNCTION track_recently_viewed_influencer(
+  user_id_val INTEGER,
+  influencer_id_val INTEGER,
+  tenant_id_val INTEGER,
+  max_recent_items INTEGER DEFAULT 50
+)
+RETURNS VOID AS $$
+BEGIN
+  -- UPSERT: Insert new record or update existing one
+  INSERT INTO recently_viewed_influencers (
+    rvi_u_id, 
+    rvi_inf_id, 
+    rvi_t_id, 
+    rvi_viewed_at
+  ) VALUES (
+    user_id_val, 
+    influencer_id_val, 
+    tenant_id_val, 
+    NOW()
+  )
+  ON CONFLICT (rvi_u_id, rvi_inf_id) 
+  DO UPDATE SET 
+    rvi_viewed_at = NOW(),
+    modified_at = NOW(),
+    modified_by = current_user
+  WHERE recently_viewed_influencers.is_deleted = false;
+  
+  -- Cleanup: Keep only the most recent N items per user
+  WITH ranked_views AS (
+    SELECT rvi_id,
+           ROW_NUMBER() OVER (
+             PARTITION BY rvi_u_id 
+             ORDER BY rvi_viewed_at DESC
+           ) as rn
+    FROM recently_viewed_influencers 
+    WHERE rvi_u_id = user_id_val 
+      AND rvi_t_id = tenant_id_val
+      AND is_deleted = false
+  )
+  UPDATE recently_viewed_influencers 
+  SET is_deleted = true,
+      deleted_at = NOW(),
+      deleted_by = current_user
+  WHERE rvi_id IN (
+    SELECT rvi_id 
+    FROM ranked_views 
+    WHERE rn > max_recent_items
+  );
+  
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- Function to get recently viewed influencers for a user
+CREATE OR REPLACE FUNCTION get_recently_viewed_influencers(
+  user_id_val INTEGER,
+  tenant_id_val INTEGER,
+  limit_val INTEGER DEFAULT 20
+)
+RETURNS TABLE (
+  influencer_id INTEGER,
+  influencer_name VARCHAR(255),
+  primary_platform_name VARCHAR(100),
+  viewed_at TIMESTAMP WITH TIME ZONE,
+  days_ago INTEGER
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    i.inf_id as influencer_id,
+    i.inf_name as influencer_name,
+    p.p_name as primary_platform_name,
+    rvi.rvi_viewed_at as viewed_at,
+    EXTRACT(days FROM NOW() - rvi.rvi_viewed_at)::INTEGER as days_ago
+  FROM recently_viewed_influencers rvi
+  JOIN influencers i ON rvi.rvi_inf_id = i.inf_id
+  LEFT JOIN platforms p ON i.inf_primary_platform_id = p.p_id
+  WHERE rvi.rvi_u_id = user_id_val 
+    AND rvi.rvi_t_id = tenant_id_val
+    AND rvi.is_deleted = false
+    AND i.is_deleted = false
+  ORDER BY rvi.rvi_viewed_at DESC
+  LIMIT limit_val;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Cleanup function to remove old viewed records (run as scheduled job)
+CREATE OR REPLACE FUNCTION cleanup_old_recently_viewed(
+  retention_days INTEGER DEFAULT 90
+)
+RETURNS INTEGER AS $$
+DECLARE
+  deleted_count INTEGER;
+BEGIN
+  -- Soft delete records older than retention period
+  UPDATE recently_viewed_influencers 
+  SET is_deleted = true,
+      deleted_at = NOW(),
+      deleted_by = 'system_cleanup'
+  WHERE rvi_viewed_at < NOW() - (retention_days || ' days')::INTERVAL
+    AND is_deleted = false;
+  
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  
+  RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- Function to toggle saved influencer status
+CREATE OR REPLACE FUNCTION toggle_saved_influencer(
+  user_id_val INTEGER,
+  influencer_id_val INTEGER,
+  tenant_id_val INTEGER
+)
+RETURNS JSON AS $$
+DECLARE
+  existing_record RECORD;
+  result JSON;
+BEGIN
+  -- Check if record exists
+  SELECT si_id, is_deleted INTO existing_record
+  FROM saved_influencers 
+  WHERE si_u_id = user_id_val 
+    AND si_inf_id = influencer_id_val;
+  
+  IF existing_record.si_id IS NULL THEN
+    -- Insert new saved record
+    INSERT INTO saved_influencers (si_u_id, si_inf_id, si_t_id)
+    VALUES (user_id_val, influencer_id_val, tenant_id_val);
+    
+    result := json_build_object(
+      'action', 'saved',
+      'is_saved', true,
+      'message', 'Influencer added to saved list'
+    );
+    
+  ELSIF existing_record.is_deleted = true THEN
+    -- Restore deleted record
+    UPDATE saved_influencers 
+    SET is_deleted = false,
+        deleted_at = NULL,
+        deleted_by = NULL,
+        modified_at = NOW(),
+        modified_by = current_user
+    WHERE si_u_id = user_id_val 
+      AND si_inf_id = influencer_id_val;
+    
+    result := json_build_object(
+      'action', 'restored',
+      'is_saved', true,
+      'message', 'Influencer restored to saved list'
+    );
+    
+  ELSE
+    -- Remove from saved (soft delete)
+    UPDATE saved_influencers 
+    SET is_deleted = true,
+        deleted_at = NOW(),
+        deleted_by = current_user,
+        modified_at = NOW()
+    WHERE si_u_id = user_id_val 
+      AND si_inf_id = influencer_id_val;
+    
+    result := json_build_object(
+      'action', 'unsaved',
+      'is_saved', false,
+      'message', 'Influencer removed from saved list'
+    );
+  END IF;
+  
+  RETURN result;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get saved influencers for a user (FIXED - Added missing closing)
+CREATE OR REPLACE FUNCTION get_saved_influencers(
+  user_id_val INTEGER,
+  tenant_id_val INTEGER,
+  limit_val INTEGER DEFAULT 50,
+  offset_val INTEGER DEFAULT 0
+)
+RETURNS TABLE (
+  influencer_id INTEGER,
+  influencer_name VARCHAR(255),
+  primary_platform_name VARCHAR(100),
+  saved_at TIMESTAMP WITH TIME ZONE,
+  days_saved INTEGER
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    i.inf_id as influencer_id,
+    i.inf_name as influencer_name,
+    p.p_name as primary_platform_name,
+    si.created_at as saved_at,
+    EXTRACT(days FROM NOW() - si.created_at)::INTEGER as days_saved
+  FROM saved_influencers si
+  JOIN influencers i ON si.si_inf_id = i.inf_id
+  LEFT JOIN platforms p ON i.inf_primary_platform_id = p.p_id
+  WHERE si.si_u_id = user_id_val 
+    AND si.si_t_id = tenant_id_val
+    AND si.is_deleted = false
+    AND i.is_deleted = false
+  ORDER BY si.created_at DESC
+  LIMIT limit_val
+  OFFSET offset_val;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get saved influencer count for a user
+CREATE OR REPLACE FUNCTION get_saved_influencers_count(
+  user_id_val INTEGER,
+  tenant_id_val INTEGER
+)
+RETURNS INTEGER AS $$
+DECLARE
+  count_result INTEGER;
+BEGIN
+  SELECT COUNT(*)::INTEGER INTO count_result
+  FROM saved_influencers si
+  JOIN influencers i ON si.si_inf_id = i.inf_id
+  WHERE si.si_u_id = user_id_val 
+    AND si.si_t_id = tenant_id_val
+    AND si.is_deleted = false
+    AND i.is_deleted = false;
+  
+  RETURN count_result;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to check if an influencer is saved by a user
+CREATE OR REPLACE FUNCTION is_influencer_saved(
+  user_id_val INTEGER,
+  influencer_id_val INTEGER,
+  tenant_id_val INTEGER
+)
+RETURNS BOOLEAN AS $$
+DECLARE
+  is_saved BOOLEAN DEFAULT false;
+BEGIN
+  SELECT EXISTS(
+    SELECT 1 
+    FROM saved_influencers si
+    WHERE si.si_u_id = user_id_val 
+      AND si.si_inf_id = influencer_id_val
+      AND si.si_t_id = tenant_id_val
+      AND si.is_deleted = false
+  ) INTO is_saved;
+  
+  RETURN is_saved;
+END;
+$$ LANGUAGE plpgsql;

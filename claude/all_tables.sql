@@ -928,6 +928,53 @@ CREATE TABLE influencer_prices (
   CONSTRAINT fk_influencer_prices_ip_pd_id FOREIGN KEY (ip_pd_id) REFERENCES platform_deliverables(pd_id) ON DELETE RESTRICT
 );
 
+---------- table saved_influencers ----------
+CREATE TABLE saved_influencers (
+  si_id BIGSERIAL PRIMARY KEY,
+  si_u_id INTEGER NOT NULL,    -- foreign key to 'u_id' from app_users table
+  si_inf_id INTEGER NOT NULL,  -- foreign key to 'inf_id' from influencers table
+  si_t_id INTEGER NOT NULL,    -- foreign key to 't_id' from tenants table
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- Foreign key constraints
+  CONSTRAINT fk_saved_influencers_user FOREIGN KEY (si_u_id) REFERENCES app_users(u_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_saved_influencers_influencer FOREIGN KEY (si_inf_id) REFERENCES influencers(inf_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_saved_influencers_tenant FOREIGN KEY (si_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,
+  -- constraints
+  CONSTRAINT uk_saved_influencers UNIQUE (si_u_id, si_inf_id)
+);
+
+---------- table recently_viewed_influencers ----------
+CREATE TABLE recently_viewed_influencers (
+  rvi_id BIGSERIAL PRIMARY KEY,
+  rvi_u_id INTEGER NOT NULL,    -- foreign key to 'u_id' from app_users table
+  rvi_inf_id INTEGER NOT NULL,  -- foreign key to 'inf_id' from influencers table
+  rvi_t_id INTEGER NOT NULL,    -- foreign key to 't_id' from tenants table
+  rvi_viewed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- Foreign key constraints
+  CONSTRAINT fk_recently_viewed_influencers_user FOREIGN KEY (rvi_u_id) REFERENCES app_users(u_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_recently_viewed_influencers_influencer FOREIGN KEY (rvi_inf_id) REFERENCES influencers(inf_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_recently_viewed_influencers_tenant FOREIGN KEY (rvi_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,
+  -- constraints
+  CONSTRAINT uk_recently_viewed_influencers UNIQUE (rvi_u_id, rvi_inf_id)
+);
+
 -- ------------------------------------------------------------------------------------------------------------------
 -- *********************************************** CAMPAIGNS SECTION ************************************************
 -- ------------------------------------------------------------------------------------------------------------------
