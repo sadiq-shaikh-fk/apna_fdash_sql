@@ -774,6 +774,7 @@ CREATE TABLE platform_deliverables (
   pd_p_id INTEGER NOT NULL,    -- foreign key to 'p_id' from platforms table
   pd_dt_id INTEGER NOT NULL,    -- foreign key to 'dt_id' from deliverable_types table
   pd_t_id INTEGER NOT NULL,    -- foreign key to 't_id' from tenants table
+  pd_default_price BIGINT NOT NULL,
   -- audit and logs
   created_by VARCHAR(100) NOT NULL DEFAULT current_user,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
@@ -993,7 +994,9 @@ CREATE TABLE campaigns (
   c_name VARCHAR(255) NOT NULL,
   c_budget DECIMAL,
   c_budget_currency VARCHAR(3) DEFAULT 'INR',
-  c_p_id JSONB,
+  c_p_id VARCHAR,    -- foreign key to 'p_id' from platforms table
+  c_live_hjkuurtjh.h.m;g;nz  start_date DATE NOT NULL,
+  c_live_end_date DATE NOT NULL,
   c_start_date DATE NOT NULL,
   c_end_date DATE NOT NULL,
   c_products_services TEXT,
@@ -1032,7 +1035,7 @@ CREATE TABLE campaigns (
   c_poc_brand_name VARCHAR(255),
   c_poc_brand_designation VARCHAR(100),
   c_poc_brand_email VARCHAR(255),
-  c_poc_brand_phone VARCHAR(20),  
+  c_poc_brand_phone VARCHAR(20),
   -- audit and logs
   created_by VARCHAR(100) NOT NULL DEFAULT current_user,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
@@ -1787,5 +1790,258 @@ CREATE TABLE user_security_events (
   CONSTRAINT fk_security_events_user FOREIGN KEY (use_u_id) REFERENCES app_users(u_id) ON DELETE CASCADE,
   CONSTRAINT fk_security_events_device FOREIGN KEY (use_device_id) REFERENCES user_devices(ud_id) ON DELETE SET NULL
 );
+
+
+
+
+
+
+
+
+
+-- ------------------------------------------------------------------------------------------------------------------
+-- *********************************************** RPF SECTION ************************************************
+-- ------------------------------------------------------------------------------------------------------------------
+
+---------- table rfp ----------
+CREATE TYPE rfp_status_enum AS ENUM ('draft', 'active', 'paused', 'completed', 'cancelled');
+CREATE TYPE rfp_income_enum AS ENUM ('0-2LPA', '2-4LPA', '4-6LPA', '6-10LPA', '10-15LPA', '15-25LPA', '25LPA+');
+
+CREATE TABLE rfp (
+  rfp_id BIGSERIAL PRIMARY KEY,
+  rfp_b_id INTEGER NOT NULL,    -- foreign key to 'b_id' from brands table
+  rfp_t_id INTEGER NOT NULL,    -- foreign key to 't_id' from tenants table
+  rfp_status rfp_status_enum NOT NULL DEFAULT 'draft',
+
+  -- Basic Campaign Info
+  rfp_name VARCHAR(255) NOT NULL,
+  rfp_budget DECIMAL,
+  rfp_budget_currency VARCHAR(3) DEFAULT 'INR',
+  rfp_p_id JSONB,
+  rfp_golive_start_date DATE NOT NULL,
+  rfp_golive_end_date DATE NOT NULL,
+  rfp_bidding_start_date DATE NOT NULL,
+  rfp_bidding_end_date DATE NOT NULL,
+  rfp_products_services TEXT,
+  rfp_business_objectives TEXT,
+
+  -- Point of Contact Information
+  rfp_brand_poc_name TEXT,
+  rfp_brand_poc_phone VARCHAR(20),
+  rfp_brand_poc_email TEXT,
+
+  -- Target Demographics
+  rfp_target_age_from INTEGER,
+  rfp_target_age_to INTEGER,
+  rfp_target_gender VARCHAR(10),
+  rfp_target_income rfp_income_enum,
+  rfp_target_locations JSONB,
+  rfp_target_education_levels JSONB,
+  rfp_target_languages JSONB,
+  rfp_target_interests JSONB,
+  rfp_behavioral_patterns TEXT,
+  rfp_psychographics TEXT,
+  rfp_technographics TEXT,
+  rfp_purchase_intent TEXT,
+  rfp_additional_demographics TEXT,
+
+  -- Influencer Requirements
+  rfp_inf_followers_range VARCHAR(50), -- e.g. 'Nano', 'Micro', 'Macro'
+  rfp_inf_engagement_rate VARCHAR(50), -- e.g. '0-2', '2-4', '4-6', '6-10', '10+'
+  rfp_inf_genres JSONB,
+  rfp_inf_niches JSONB,
+  rfp_inf_locations JSONB,
+  rfp_inf_age_from INTEGER,
+  rfp_inf_age_to INTEGER,
+  rfp_inf_languages JSONB,
+  rfp_inf_primary_platform_id JSONB,
+  rfp_inf_last_post_days VARCHAR(50), -- e.g. '7 days', '30 days', '90 days'
+  rfp_category TEXT,
+  rfp_inf_payment_terms VARCHAR(255),
+  rfp_worked_with_promoted_competitors BOOLEAN DEFAULT false,
+  rfp_previously_worked_with_brand BOOLEAN DEFAULT false,
+  rfp_assets JSONB,
+ 
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- Foreign key constraints
+  CONSTRAINT fk_rfp_brand FOREIGN KEY (rfp_b_id) REFERENCES brands(b_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_rfp_tenant FOREIGN KEY (rfp_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,
+  -- constraints
+  CONSTRAINT uk_rfp_name_brand UNIQUE (rfp_name),
+  CONSTRAINT chk_rfp_golive_dates CHECK (rfp_golive_end_date >= rfp_golive_start_date),
+  CONSTRAINT chk_rfp_bidding_dates CHECK (rfp_bidding_end_date >= rfp_bidding_start_date),
+  CONSTRAINT chk_target_age_range CHECK (rfp_target_age_from <= rfp_target_age_to),
+  CONSTRAINT chk_inf_age_range CHECK (rfp_inf_age_from   <= rfp_inf_age_to)
+);
+
+---------- table rfp_poc ----------
+CREATE TABLE rfp_poc (
+  rfp_poc_id BIGSERIAL PRIMARY KEY,
+  rfp_poc_rfp_id INTEGER NOT NULL,    -- foreign key to 'rfp_id' from rfp table
+  rfp_poc_u_id INTEGER NOT NULL,    -- foreign key to 'u_id' from app_users table
+  rfp_poc_t_id INTEGER NOT NULL,    -- foreign key to 't_id' from tenants table
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- Foreign key constraints
+  CONSTRAINT fk_rfp_poc_cp_u_id FOREIGN KEY (rfp_poc_u_id) REFERENCES app_users(u_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_rfp_poc_rfp_id FOREIGN KEY (rfp_poc_rfp_id) REFERENCES rfp(rfp_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_rfp_poc_cp_t_id FOREIGN KEY (rfp_poc_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT
+);
+
+---------- table rfp_objectives ----------
+CREATE TABLE rfp_objectives (
+  rfpo_id BIGSERIAL PRIMARY KEY,
+  rfpo_rfp_id INTEGER NOT NULL,    -- foreign key 'rfp_id' from rfp table
+  rfpo_objective TEXT NOT NULL,
+  rfpo_kpi TEXT NOT NULL,
+  rfpo_t_id INTEGER NOT NULL,    -- foreign key to 't_id' from tenants table
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- Foreign key constraints
+  CONSTRAINT fk_campaign_objectives_campaign FOREIGN KEY (rfpo_rfp_id) REFERENCES rfp(rfp_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_campaign_objectives_tenant FOREIGN KEY (rfpo_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT
+);
+
+---------- table rfp_deliverable_proposals ----------
+
+CREATE TYPE rfp_proposal_status_enum AS ENUM ('draft', 'pending_approval', 'approved', 'rejected');
+
+CREATE TABLE rfp_deliverable_proposals (
+  rfpdp_id BIGSERIAL PRIMARY KEY,
+  rfpdp_rfp_id INTEGER NOT NULL,   -- foreign key to 'rfp_id' from rfp table
+  rfpdp_pd_id INTEGER NOT NULL,    -- foreign key to 'pd_id' from platform_deliverables table
+  rfpdp_agreed_price DECIMAL(15,2) NOT NULL,
+  rfpdp_qty INTEGER NOT NULL,
+  rfpdp_live_date DATE,
+  -- rfpdp_notes TEXT,    -- notes is not there in the new UI
+  rfpdp_proposal_status rfp_proposal_status_enum NOT NULL DEFAULT 'draft',
+  rfpdp_t_id INTEGER NOT NULL,    -- foreign key to 't_id' from tenants table
+
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- Foreign key constraints
+  CONSTRAINT fk_rfp_deliverable_proposals_rfp FOREIGN KEY (rfpdp_rfp_id) REFERENCES rfp(rfp_id)  ON DELETE RESTRICT,
+  CONSTRAINT fk_rfp_deliverable_proposals_dp_pd_id FOREIGN KEY (rfpdp_pd_id) REFERENCES platform_deliverables(pd_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_rfp_deliverable_proposals_dp_t_id FOREIGN KEY (rfpdp_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,
+  -- constraints
+  CONSTRAINT chk_price_positive CHECK (rfpdp_agreed_price >= 0)
+);
+
+
+---------- influencer_bidding table ----------
+
+CREATE TYPE rfp_influencer_bidding_status_enum AS ENUM ('pending', 'approved', 'rejected');
+
+CREATE TABLE influencer_bidding (
+  ib_id BIGSERIAL PRIMARY KEY,
+  ib_inf_id INTEGER NOT NULL,      -- foreign key to 'inf_id' from influencer table
+  ib_is_id INTEGER NOT NULL,       -- foreign key to 'is_id' from influencer_social table
+  ib_rfp_id INTEGER NOT NULL,      -- foreign key to 'rfp_id' from rfp table
+  ib_rfpdp_id INTEGER NOT NULL,   -- foreign key to 'rfp_dp_id' from rfp_deliverable_proposals table
+  ib_bid_amount DECIMAL NOT NULL,
+  ib_bid_currency VARCHAR(3) DEFAULT 'INR',
+  ib_bid_message TEXT,
+  ib_status rfp_influencer_bidding_status_enum NOT NULL DEFAULT 'pending',
+  ib_approved_by_rfp_poc_id INTEGER,  -- foreign key to 'rfp_poc_id' from rfp_poc table
+  ib_t_id INTEGER NOT NULL,           -- foreign key to 't_id' from tenants table
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- Foreign key constraints
+  CONSTRAINT fk_influencer_bidding_influencer FOREIGN KEY (ib_inf_id) REFERENCES influencers(inf_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_influencer_bidding_influencer_socials FOREIGN KEY (ib_is_id) REFERENCES influencer_socials(is_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_influencer_bidding_rfp FOREIGN KEY (ib_rfp_id) REFERENCES rfp(rfp_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_influencer_bidding_rfp_dp FOREIGN KEY (ib_rfpdp_id) REFERENCES rfp_deliverable_proposals(rfpdp_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_influencer_bidding_tenant FOREIGN KEY (ib_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT
+);
+
+
+---------- table rfp_cart ----------
+CREATE TYPE rfp_cart_status_enum AS ENUM ('draft', 'sent_to_campaign');
+
+CREATE TABLE rfp_cart_details (
+  rfp_cr_id BIGSERIAL PRIMARY KEY,
+  rfp_cr_rfp_id INTEGER NOT NULL,                          -- foreign key to "rfp_id" from rfp table 
+  rfp_cr_name TEXT NOT NULL,                               -- "Q1 Fashion Campaign Cart"
+  rfp_cr_estimated_total DECIMAL(15,2) DEFAULT 0,
+  rfp_cr_status rfp_cart_status_enum NOT NULL DEFAULT 'draft',
+  rfp_cr_sent_to_campaign_at TIMESTAMP WITH TIME ZONE,     -- When cart was sent to campaign
+  rfp_cr_is_active BOOLEAN NOT NULL,                       -- is_active=false -> cart sent to campaign
+  rfp_cr_brand_notes TEXT,                                 -- Brand's overall feedback
+  rfp_cr_t_id INTEGER NOT NULL,
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- composite unique constraint
+  CONSTRAINT unique_rfp_cart_per_user UNIQUE (rfp_cr_name, created_by),
+  -- Foreign key constraints
+  CONSTRAINT fk_rfp_cart_details_rfp FOREIGN KEY (rfp_cr_rfp_id) REFERENCES rfp(rfp_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_cart_details_tenant FOREIGN KEY (rfp_cr_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT
+);
+
+---------- table cart_items ----------
+CREATE TABLE rfp_cart_items (
+  rfp_ci_id BIGSERIAL PRIMARY KEY,
+  rfp_ci_rfp_cr_id INTEGER NOT NULL,                      -- foreign key to 'rfp_cr_id' from rfp_cart_details table
+  rfp_ci_ib_id INTEGER NOT NULL,                          -- foreign key to 'ib_id' from influencer_bidding table (FIXED)
+  rfp_ci_t_id INTEGER NOT NULL,
+  -- audit and logs
+  created_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  modified_by VARCHAR(100) NOT NULL DEFAULT current_user,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
+  -- soft delete
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  deleted_by VARCHAR(100),
+  -- Foreign key constraints (FIXED)
+  CONSTRAINT fk_rfp_cart_items_cart FOREIGN KEY (rfp_ci_rfp_cr_id) REFERENCES rfp_cart_details(rfp_cr_id)  ON DELETE RESTRICT,
+  CONSTRAINT fk_rfp_cart_items_bid FOREIGN KEY (rfp_ci_ib_id) REFERENCES influencer_bidding(ib_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_cart_items_tenant FOREIGN KEY (rfp_ci_t_id) REFERENCES tenants(t_id) ON DELETE RESTRICT,
+  -- Prevent duplicate deliverables in same cart
+  CONSTRAINT unique_deliverable_per_rfp_cart UNIQUE (rfp_ci_rfp_cr_id, rfp_ci_ib_id)
+);
+
 
 
